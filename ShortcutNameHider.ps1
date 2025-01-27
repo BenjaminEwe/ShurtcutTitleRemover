@@ -153,21 +153,63 @@ Function RemoveIcon {
     }
 }
 
+Function RemoveRecyclingBin {
+    if((Test-Path -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum) -eq $false) {
+        New-Item -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies -Name "NonEnum"
+    }
+    Set-ItemProperty -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum -Name "{645FF040-5081-101B-9F08-00AA002F954E}" -Value 1 -Type DWord
+    stop-process -name explorer
+    Write-Host "Recycling bin has been hidden from desktop"
+}
+
+Function RestoreRecyclingBin {
+    $recyclingPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E}"
+    # Put recycling bin on desktop
+    if(Test-Path -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum) {
+        Remove-Item -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum
+    }
+    # Revert name of recycling bin - apparently powershell is incapable of this so we have to use CMD for it
+    cmd /c reg delete "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E}" /ve /f
+    stop-process -name explorer
+    Write-Host "Recycling Bin has been restored"
+}
+
+Function RenameRecyclingBin {
+    $recyclingPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E}"
+    if(Test-Path -Path $recyclingPath) {
+        Set-ItemProperty -Path $recyclingPath -Name "(Default)" -Value " " -Force | Out-Null
+    } else {
+        Write-Host "Something seems to be wrong. Either the script is outdated or there are some weird problems with your recycling bin"
+    }
+    stop-process -name explorer
+    Write-Host "Recycling bin has been renamed"
+}
+
 do {
     if (!$switchInput -or !$ElevatedRestart) {
         Write-Host "
-    1. Remove the names of all icons [Affects all users of computer] [Administrator permissions needed]
-    2. Remove the names of only the icons on your personal desktop
-    3. TBD Workaround to remove all shortcut names without affecting other users [Administrator permissions needed]
-    4. Remove the shortcut arrow from shortcuts [Affects all users of computer] [Administrator permissions needed]
-    5. Remove the shortcut arrow from shortcuts and restart explorer [Affects all users of computer] [Administrator permissions needed] [Save documents first]
-    6. TBD Remove UAC icon from shortcuts [Affects all users of computer] [Administrator permissions needed]
-    7. TBD Remove name from recycling bin
-    8. TBD Remove recycling bin
-    9. TBD Put shortcut icon back [Affects all users of computer] [Administrator permissions needed] [Save documents first]
+    --Icon names-- 
+    A1. Remove the names of all icons [Affects all users of computer] [Administrator permissions needed]
+    A2. Remove the names of only the icons on your personal desktop
+    A3. TBD Workaround to remove all shortcut names without affecting other users [Administrator permissions needed]
+    
+    --Shortcut arrow--
+    B1. Remove the shortcut arrow from shortcuts [Affects all users of computer] [Administrator permissions needed]
+    B2. Remove the shortcut arrow from shortcuts and restart explorer [Affects all users of computer] [Administrator permissions needed] [Save documents first]
+    
+    --UAC icons--
+    C1. TBD Remove UAC icon from shortcuts [Affects all users of computer] [Administrator permissions needed]
+    
+    --Recycling Bin--
+    D1. Remove name from recycling bin
+    D2. Remove recycling bin
+    
+    --Restore defaults--
+    U1. Restore Shortcut arrow back [Affects all users of computer] [Administrator permissions needed] [Save documents first]
+    U2. Restore Recycling bin
     
     0. exit"
-        $switchInput = Read-Host "Select a number"
+        $switchInput = Read-Host "Select an option"
     }
 
     Clear-Host
@@ -175,7 +217,7 @@ do {
     switch ($switchInput)
     {
         0 {exit}
-        1 { 
+        A1 { 
             Elevate -commandToRestart 1
             makeBackupFolder -folderToBackup $destinationFolder
             makeBackupFolder -folderToBackup $destinationFolderPublic
@@ -198,7 +240,7 @@ do {
             BackupNRename -ExistingCnt $publicModCnt.ExistingLnkCnt -newFiles $lnkFilesPublic -destinationFolder $destinationFolderPublic
             BackupNRename -ExistingCnt $publicModCnt.ExistingUrlCnt -newFiles $urlFilesPublic -destinationFolder $destinationFolderPublic
             Summary -includePublic "true"}
-        2 {
+        A2 {
             Elevate -commandToRestart 1
             makeBackupFolder -folderToBackup $destinationFolder
             # Find the count of already modified
@@ -213,13 +255,13 @@ do {
             BackupNRename -ExistingCnt $userModCnt.ExistingLnkCnt -newFiles $lnkFilesUser -destinationFolder $destinationFolder
             BackupNRename -ExistingCnt $userModCnt.ExistingUrlCnt -newFiles $urlFilesUser -destinationFolder $destinationFolder
             Summary -includePublic "false"}
-        3 {}
-        4 {RemoveIcon}
-        5 {RemoveIcon; stop-process -name explorer}
-        6 {}
-        7 {}
-        8 {}
-        9 {
+        A3 {}
+        B1 {RemoveIcon}
+        B2 {RemoveIcon; stop-process -name explorer}
+        C1 {}
+        D1 {RenameRecyclingBin}
+        D2 {RemoveRecyclingBin}
+        U1 {
             if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons") {
                 Remove-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons"
                 stop-process -name explorer
@@ -227,5 +269,6 @@ do {
                 Write-Host "The icon should already be back. Try restarting the computer if it is still missing"
             }
         }
+        U2 {RestoreRecyclingBin}
     }
 } while ($true)
