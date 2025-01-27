@@ -1,9 +1,12 @@
 # ShurtcutTitleRemover
 Powershell script that removes the names of the icons on your desktop.
 
+To run script open powershell and paste:
+
+```irm https://raw.githubusercontent.com/BenjaminEwe/ShurtcutTitleRemover/refs/heads/main/ShortcutNameHider.ps1 | iex```
 
 Before removing shortcut titles:
-![Corrupted File](Images/before.png)
+![Corrupted File](Images/Before.png)
 
 After removing shortcut titles:
 ![Corrupted File](Images/After.png)
