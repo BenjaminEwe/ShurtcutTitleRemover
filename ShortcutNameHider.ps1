@@ -3,6 +3,17 @@ param(
     [switch]$ElevatedRestart
 )
 
+# Get the current user's username
+$username = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name.Split("\")[-1]
+
+# Set source and destination folders for user
+$sourceFolderUser = "C:\Users\$username\Desktop"
+$destinationFolder = "C:\Users\$username\Desktopbackup"
+
+# Set source and destination folders for public
+$sourceFolderPublic = "C:\Users\Public\Desktop"
+$destinationFolderPublic = "C:\Users\Public\DesktopBackup"
+
 Function FindModified {
     param (
         [string]$location,
@@ -55,198 +66,157 @@ Function BackupNRename {
     }
 }
 
-# Check if the script has restarted itself
-if (!$ElevatedRestart){
-    # Ask if the public folder should be included
-    do {
-        $answer = Read-Host "Do you want to include shortcuts on public desktop? (Y/N) (say yes if you are the only user of this computer) This will prompt for administrator permissions."
-        $answer = $answer.Trim().ToLower()  # Normalize input
+Function Elevate {
+    #takes in an input so that script knows wich function to auto-execute after restart
+    param (
+        [int]$commandToRestart
+    )
+    
+    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Write-Verbose "Not running as administrator. Restarting with elevation..." -Verbose
+        Start-Process pwsh.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -$commandToRestart"
+        exit
+    }
+ }
 
-        if ($answer -eq 'y') {
-            Write-Host "Including Public..." -ForegroundColor Green
-            $includePublic = 'true'
-
-            if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-                Write-Verbose "Not running as administrator. Restarting with elevation..." -Verbose
-                Start-Process pwsh.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -ElevatedRestart"
-                exit
-            }
-
-            break
-        } elseif ($answer -eq 'n') {
-            Write-Host "Only processing user shortcuts." -ForegroundColor Green
-            $includePublic = 'false'
-            break
-        } else {
-            Write-Host "Invalid input. Please enter Y or N." -ForegroundColor Red
-        }
-    } while ($true)
-}
-else{
-    $includePublic = 'true'
-}
-
-# Get the current user's username
-$username = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name.Split("\")[-1]
-
-# Set source and destination folders for user
-$sourceFolderUser = "C:\Users\$username\Desktop"
-$destinationFolder = "C:\Users\$username\Desktopbackup"
-
-# Set source and destination folders for public
-if ([bool]::Parse($includePublic)){
-    $sourceFolderPublic = "C:\Users\Public\Desktop"
-    $destinationFolderPublic = "C:\Users\Public\DesktopBackup"
-}
-
-# Ensure backup folder exists, make new if not
-if (!(Test-Path $destinationFolder)) { 
-    New-Item -Path $destinationFolder -ItemType Directory | Out-Null
-    Write-Host "Created backup folder: $destinationFolder"
-} else {
-    Write-Host "Backup folder already exists: $destinationFolder"
-}
-
-# ensure backup folder exists for public, make new if not
-if ([bool]::Parse($includePublic)){
-    if (!(Test-Path $destinationFolderPublic)) { 
-        New-Item -Path $destinationFolderPublic -ItemType Directory | Out-Null
-        Write-Host "Created backup folder: $destinationFolderPublic"
+Function makeBackupFolder {
+    param (
+        [string]$folderToBackup
+    )
+    # Ensure backup folder exists, make new if not
+    if (!(Test-Path $folderToBackup)) { 
+        New-Item -Path $folderToBackup -ItemType Directory | Out-Null
+        Write-Host "Created backup folder: $folderToBackup"
     } else {
-        Write-Host "Backup folder already exists: $destinationFolderPublic"
+        Write-Host "Backup folder already exists: $folderToBackup"
     }
 }
 
-# FindModified for users folder
-$userModCnt = FindModified -location $username -path $sourceFolderUser;
-# FindModified for Public folder
-if ([bool]::Parse($includePublic)){
-    $publicModCnt = FindModified -location "Public" -path $sourceFolderPublic;
+Function Summary {
+    param (
+        [switch]$includePublic
+    )
+    Write-Host "`nProcessing complete!"
+    Write-Host "Backup folder: $destinationFolder"
+    if(!$includePublic){Write-Host "Public Backup folder: $destinationFolderPublic"}
+    Write-Host "$($lnkFilesUser.Count + $lnkFilesPublic.Count) .lnk files and $($urlFilesUser.Count + $urlFilesPublic.Count) .url files were renamed."
+    Write-Host "Total already existing empty shortcuts: $($userModCnt.ExistingLnkCnt + $publicModCnt.ExistingLnkCnt) .lnk, $($userModCnt.ExistingUrlCnt + $publicModCnt.ExistingUrlCnt) .url."
+    Write-Host "------------------------------------------------"
 }
 
-# this is just for nicer formatting
-Write-Host " "
+Function RemoveIcon {
+    # Define blank icon 
+    $imageBase64 = "AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAQAQAAAAAAAAAAAAAAAAAAAAAAAD//wECAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAA=="
+    $imageFolderLocation = "C:\ProgramData\ShortcutHider" # Define location for image file to be saved
+    $imageFileLocation = $imageFolderLocation + "\BlankIconForHidingShortcutArrow.ico" # Define file location
+    $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons" # Define registry path
+    $registryPropertyName = '29' # Define name of proprty
+    $registryPropertyType = 'String' # Define property type
 
-# FindNew for users folder
-$userNewArr = FindNew -location $username -path $sourceFolderUser;
-# FindNew for Public
-if ([bool]::Parse($includePublic)){
-    $publicNewArr = FindNew -location "Public" -path $sourceFolderPublic;
+    # test if image file exists, otherwise create it
+    if (Test-Path $imageFileLocation){
+        Write-Host "Icon already exists"
+    }
+    else {
+        Write-Host "Will save the needed icon at " $imageFileLocation
+
+        # make directory to store icon
+        New-Item -Path $imageFolderLocation -ItemType Directory | Out-Null
+
+        #Decode Base64 to directory
+        $bytes = [Convert]::FromBase64String($imageBase64)
+        [System.IO.File]::WriteAllBytes($imageFileLocation, $bytes)
+    }
+
+    if (!(Test-path $registryPath)){ # In this case, the Shell-Icons key does not exist. The Key is created, and then the value is created.
+        New-Item -Path $registryPath | Out-Null
+
+        $newItemProperty = @{
+            Path = $registryPath
+            Name = $registryPropertyName
+            PropertyType = $registryPropertyType
+            Value = $imageFileLocation
+        }
+        New-ItemProperty @newItemProperty | Out-Null
+    } elseif ((Get-Item -Path $registryPath).GetValueNames() -Contains "29") { # In this case the Shell-Icons key exists and does have a key named 29. it is modified to the new value.
+        # finds if there already is a value named 29
+        Set-ItemProperty -Path $registryPath -Name $registryPropertyName -Value $imageFileLocation -Force | Out-Null
+    }
+    else { # in this case the Shell-Icons key exists, but no string named 29 exists. A new one is then created
+        $newItemProperty = @{
+            Path = $registryPath
+            Name = $registryPropertyName
+            PropertyType = $registryPropertyType
+            Value = $imageFileLocation
+        }
+        New-ItemProperty @newItemProperty | Out-Null
+    }
 }
-
-
-# Split up the arrays into .lnk and .url
-$lnkFilesUser = $userNewArr | Where-Object { $_.Extension -eq ".lnk" }
-$urlFilesUser = $userNewArr | Where-Object { $_.Extension -eq ".url" }
-Write-Host "Identified $($lnkFilesUser.Count) new .lnk files and $($urlFilesUser.Count) new .url files for processing in $username."
-
-if([bool]::Parse($includePublic)){
-    # Process files separately for .lnk and .url
-    $lnkFilesPublic = $publicNewArr | Where-Object { $_.Extension -eq ".lnk" }
-    $urlFilesPublic = $publicNewArr | Where-Object { $_.Extension -eq ".url" }
-    Write-Host "Identified $($lnkFilesPublic.Count) new .lnk files and $($urlFilesPublic.Count) new .url files for processing. in public"
-}
-
-# Backup and rename users shortcuts
-# .lnk
-BackupNRename -ExistingCnt $userModCnt.ExistingLnkCnt -newFiles $lnkFilesUser -destinationFolder $destinationFolder
-# .url
-BackupNRename -ExistingCnt $userModCnt.ExistingUrlCnt -newFiles $urlFilesUser -destinationFolder $destinationFolder
-
-# Backup and rename public shortcuts
-if([bool]::Parse($includePublic)){
-    # .lnk
-    BackupNRename -ExistingCnt $publicModCnt.ExistingLnkCnt -newFiles $lnkFilesPublic -destinationFolder $destinationFolderPublic
-    # .url
-    BackupNRename -ExistingCnt $publicModCnt.ExistingUrlCnt -newFiles $urlFilesPublic -destinationFolder $destinationFolderPublic
-}
-
-# Final Summary
-Write-Host "`nProcessing complete!"
-Write-Host "Backup folder: $destinationFolder"
-if([bool]::Parse($includePublic)){Write-Host "Public Backup folder: $destinationFolderPublic"}
-Write-Host "$($lnkFilesUser.Count + $lnkFilesPublic.Count) .lnk files and $($urlFilesUser.Count + $urlFilesPublic.Count) .url files were renamed."
-Write-Host "Total already existing empty shortcuts: $($userModCnt.ExistingLnkCnt + $publicModCnt.ExistingLnkCnt) .lnk, $($userModCnt.ExistingUrlCnt + $publicModCnt.ExistingUrlCnt) .url."
-
-Write-Host "`n"
-
-# Section for removing shortcut arrows 
 
 do {
-	$answer = Read-Host "Do you want to remove the shortcut arrow from shortcuts? (Y/N)"
-	$answer = $answer.Trim().ToLower()  # Normalize input
+    if (!$switchInput -or !$ElevatedRestart) {
+        Write-Host "
+    1. Remove the names of all icons (do this if you are the only user of this computer) [Administrator permissions needed]
+    2. Remove the names of only the icons on your personal desktop
+    3. TBD Workaround to remove all shortcut names without affecting other users [Administrator permissions needed]
+    4. Remove the shortcut arrow from shortcuts [admin??????????????????????????????????????????????????????????????]
+    5. Remove the shortcut arrow from shortcuts and restart explorer (save documents first)
+    6. TBD Remove UAC icon from shortcuts
+    7. TBD Remove name from recycling bin
+    8. TBD Remove recycling bin
+    9. TBD Put shortcut icon back
+    
+    0. exit"
+        $switchInput = Read-Host "Select a number"
+    }
 
-	if ($answer -eq 'y') {
-		break
-	} elseif ($answer -eq 'n') {
-		Write-Host "Icon shortcuts will be left alone" -ForegroundColor Green
-		exit
-	} else {
-		Write-Host "Invalid input. Please enter Y or N." -ForegroundColor Red
-	}
-} while ($true)
+    Clear-Host
 
-# Define blank icon
-$imageBase64 = "AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAQAQAAAAAAAAAAAAAAAAAAAAAAAD//wECAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAA=="
-# Define location for image file to be saved
-$imageFolderLocation = "C:\ProgramData\ShortcutHider"
-# Define file location
-$imageFileLocation = $imageFolderLocation + "\BlankIconForHidingShortcutArrow.ico" 
-# Define registry path
-$registryPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons"
-# Define name of proprty
-$registryPropertyName = '29'
-# Define property type
-$registryPropertyType = 'String'
-
-# test if image file exists, otherwise create it
-if (Test-Path $imageFileLocation){
-	Write-Host "Icon already exists"
-}
-else {
-	Write-Host "Will save the needed icon at " $imageFileLocation
-
-	# make directory to store icon
-	New-Item -Path $imageFolderLocation -ItemType Directory | Out-Null
-
-	#Decode Base64 to directory
-	$bytes = [Convert]::FromBase64String($imageBase64)
-	[System.IO.File]::WriteAllBytes($imageFileLocation, $bytes)
-}
-
-# Get the current value of the registry key
-try {$currentValueRegistry = (Get-ItemProperty -Path $registryPath -Name 29).29}
-catch {$currentValueRegistry = "empty"}
-
-if ($currentValueRegistry -eq $imageFileLocation) { # If the value is already correct
-	Write-Host "the registry value has already been set"
-} elseif ($currentValueRegistry -ne "empty") { # If a value exists, but is wrong - useful if user has already tried to incorrectly modify it themselves
-    Set-ItemProperty -Path $registryPath -Name $registryPropertyName -Value $imageFileLocation -Force | Out-Null
-}else { # if no key exists
-	# Creates the key for the edit
-	New-Item -Path $registryPath | Out-Null
-
-	$newItemProperty = @{
-		Path = $registryPath
-		Name = $registryPropertyName
-		PropertyType = $registryPropertyType
-		Value = $imageFileLocation
-	}
-	New-ItemProperty @newItemProperty | Out-Null
-}
-
-# restart explorer if the user wishes
-do {
-	$answer = Read-Host "Windows explorer must be restarted for changes to be visible. Do you want to restart windows explorer now? (Y/N) (this will close file explorer windows and might give some instability if you have running apps)"
-	$answer = $answer.Trim().ToLower()  # Normalize input
-
-	if ($answer -eq 'y') {
-		stop-process -name explorer
-		break
-	} elseif ($answer -eq 'n') {
-		Write-Host "Changes will take effect on next restart" -ForegroundColor Green
-		break
-	} else {
-		Write-Host "Invalid input. Please enter Y or N." -ForegroundColor Red
-	}
+    switch ($switchInput)
+    {
+        0 {exit}
+        1 { 
+            Elevate -commandToRestart 1
+            makeBackupFolder -folderToBackup $destinationFolder
+            makeBackupFolder -folderToBackup $destinationFolderPublic
+            # Find the count of already modified
+            $userModCnt = FindModified -location $username -path $sourceFolderUser
+            $publicModCnt = FindModified -location "Public" -path $sourceFolderPublic
+            # Find the array of new icons
+            $userNewArr = FindNew -location $username -path $sourceFolderUser
+            $publicNewArr = FindNew -location "Public" -path $sourceFolderPublic
+            # Split up arrays into .url and .lnk
+            $lnkFilesUser = $userNewArr | Where-Object { $_.Extension -eq ".lnk" }
+            $urlFilesUser = $userNewArr | Where-Object { $_.Extension -eq ".url" }
+            Write-Host "Identified $($lnkFilesUser.Count) new .lnk files and $($urlFilesUser.Count) new .url files for processing in $username."
+            $lnkFilesPublic = $publicNewArr | Where-Object { $_.Extension -eq ".lnk" }
+            $urlFilesPublic = $publicNewArr | Where-Object { $_.Extension -eq ".url" }
+            Write-Host "Identified $($lnkFilesPublic.Count) new .lnk files and $($urlFilesPublic.Count) new .url files for processing. in public"
+            # Backup and rename
+            BackupNRename -ExistingCnt $userModCnt.ExistingLnkCnt -newFiles $lnkFilesUser -destinationFolder $destinationFolder
+            BackupNRename -ExistingCnt $userModCnt.ExistingUrlCnt -newFiles $urlFilesUser -destinationFolder $destinationFolder
+            BackupNRename -ExistingCnt $publicModCnt.ExistingLnkCnt -newFiles $lnkFilesPublic -destinationFolder $destinationFolderPublic
+            BackupNRename -ExistingCnt $publicModCnt.ExistingUrlCnt -newFiles $urlFilesPublic -destinationFolder $destinationFolderPublic
+            Summary -includePublic "true"}
+        2 {
+            Elevate -commandToRestart 1
+            makeBackupFolder -folderToBackup $destinationFolder
+            # Find the count of already modified
+            $userModCnt = FindModified -location $username -path $sourceFolderUser
+            # Find the array of new icons
+            $userNewArr = FindNew -location $username -path $sourceFolderUser
+            # Split up arrays into .url and .lnk
+            $lnkFilesUser = $userNewArr | Where-Object { $_.Extension -eq ".lnk" }
+            $urlFilesUser = $userNewArr | Where-Object { $_.Extension -eq ".url" }
+            Write-Host "Identified $($lnkFilesUser.Count) new .lnk files and $($urlFilesUser.Count) new .url files for processing in $username."
+            # Backup and rename
+            BackupNRename -ExistingCnt $userModCnt.ExistingLnkCnt -newFiles $lnkFilesUser -destinationFolder $destinationFolder
+            BackupNRename -ExistingCnt $userModCnt.ExistingUrlCnt -newFiles $urlFilesUser -destinationFolder $destinationFolder
+            Summary -includePublic "false"}
+        3 {}
+        4 {RemoveIcon}
+        5 {RemoveIcon; stop-process -name explorer}
+        6 {}
+        7 {}
+    }
 } while ($true)
