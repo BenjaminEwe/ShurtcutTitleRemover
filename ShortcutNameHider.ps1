@@ -156,15 +156,15 @@ Function RemoveIcon {
 do {
     if (!$switchInput -or !$ElevatedRestart) {
         Write-Host "
-    1. Remove the names of all icons (do this if you are the only user of this computer) [Administrator permissions needed]
+    1. Remove the names of all icons [Affects all users of computer] [Administrator permissions needed]
     2. Remove the names of only the icons on your personal desktop
     3. TBD Workaround to remove all shortcut names without affecting other users [Administrator permissions needed]
-    4. Remove the shortcut arrow from shortcuts [admin??????????????????????????????????????????????????????????????]
-    5. Remove the shortcut arrow from shortcuts and restart explorer (save documents first)
-    6. TBD Remove UAC icon from shortcuts
+    4. Remove the shortcut arrow from shortcuts [Affects all users of computer] [Administrator permissions needed]
+    5. Remove the shortcut arrow from shortcuts and restart explorer [Affects all users of computer] [Administrator permissions needed] [Save documents first]
+    6. TBD Remove UAC icon from shortcuts [Affects all users of computer] [Administrator permissions needed]
     7. TBD Remove name from recycling bin
     8. TBD Remove recycling bin
-    9. TBD Put shortcut icon back
+    9. TBD Put shortcut icon back [Affects all users of computer] [Administrator permissions needed] [Save documents first]
     
     0. exit"
         $switchInput = Read-Host "Select a number"
@@ -218,5 +218,14 @@ do {
         5 {RemoveIcon; stop-process -name explorer}
         6 {}
         7 {}
+        8 {}
+        9 {
+            if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons") {
+                Remove-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons"
+                stop-process -name explorer
+            } else {
+                Write-Host "The icon should already be back. Try restarting the computer if it is still missing"
+            }
+        }
     }
 } while ($true)
