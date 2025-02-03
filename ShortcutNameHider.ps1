@@ -58,16 +58,20 @@ Function BackupNRename {
     )
     $i = $existingCnt + 1
     foreach ($file in $newFiles) {
-    Copy-Item -Path $file.FullName -Destination $destinationFolder -Force
-    $newName = (" " * $i) + $file.Extension
-    Rename-Item -Path $file.FullName -NewName $newName -Force
-    Write-Host "Renamed: '$($file.Name)' to '$newName'"
-    $i++
+        # Remove the file if it has already been backed up
+        if (Test-Path "$destinationFolder\$($file.Name)"){
+            Remove-Item "$destinationFolder\$($file.Name)"
+        }
+        Copy-Item -Path $file.FullName -Destination $destinationFolder -Force
+        $newName = (" " * $i) + $file.Extension
+        Rename-Item -Path $file.FullName -NewName $newName -Force
+        Write-Host "Renamed: '$($file.Name)' to '$newName'"
+        $i++
     }
 }
 
 Function Elevate {
-    #takes in an input so that script knows wich function to auto-execute after restart
+    # Takes in an input so that script knows wich function to auto-execute after restart
     param (
         [int]$commandToRestart
     )
