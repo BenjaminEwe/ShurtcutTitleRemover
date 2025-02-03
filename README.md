@@ -1,10 +1,10 @@
 # ShurtcutTitleRemover
-Powershell script that removes the names of the icons on your desktop and hides shortcut arrows.
+PowerShell script that removes the names of the icons on your desktop and hides shortcut arrows.
 
 ![NoTitlesNoArrowNoBinName](Images/NoTitlesNoArrowNoBinName.png)
 
 
-To run script open powershell and paste:
+To run script open PowerShell and paste:
 
 ```irm https://raw.githubusercontent.com/BenjaminEwe/ShurtcutTitleRemover/refs/heads/main/ShortcutNameHider.ps1 | iex```
 
@@ -37,7 +37,7 @@ The script works by renaming the files to invisible characters. Feel free to ope
 A backup is made of all files before modifying them to make it easier to undo.
 
 ### Shortcut arrow
-Many guides reccomend setting the shortcut icon to ```%windir%\System32\shell32.dll,-50```
+Many guides recommend setting the shortcut icon to ```%windir%\System32\shell32.dll,-50```
 While this often works largely fine it can cause the iconcache.db to corrupt. This can lead to the shortcut arrow being replaced by a giant black box, or shortcuts losing their icons instead becoming blank files. Setting it to a custom blank icon seems to be more stable.
 
 ![Corrupted File](Images/corrupted.png)
@@ -48,7 +48,7 @@ While this often works largely fine it can cause the iconcache.db to corrupt. Th
 ### Remove shortcut name
 Copy an invisible character like this one: ```ㅤ ```
 
-Start renaming shortcuts one by one with an increasign amount of invisible characters
+Start renaming shortcuts one by one with an increasing amount of invisible characters
 
 ### Remove the shortcut arrow
 1. Download a blank .ico file ([Like this one](Images/Blank.ico)) and place it somewhere it can stay permanently
@@ -67,7 +67,7 @@ Start renaming shortcuts one by one with an increasign amount of invisible chara
 TBD
 
 ### Remove the name of the recycling bin
-Right click the recycling bin, rename, press space, done
+Right-click the recycling bin, rename, press space, done
 
 ### Remove the recycling bin
 1. Open settings>Themes (or press [here](ms-settings:themes))

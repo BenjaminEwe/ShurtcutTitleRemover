@@ -52,7 +52,7 @@ Function FindNew {
 
 Function BackupNRename {
     param (
-        [int]$ExistingCnt,
+        [int]$existingCnt,
         [array]$newFiles,
         [string]$destinationFolder
     )
@@ -74,7 +74,7 @@ Function Elevate {
     
     if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         Write-Verbose "Not running as administrator. Restarting with elevation..." -Verbose
-        Start-Process pwsh.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -$commandToRestart"
+        Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -$commandToRestart"
         exit
     }
  }
@@ -163,7 +163,6 @@ Function RemoveRecyclingBin {
 }
 
 Function RestoreRecyclingBin {
-    $recyclingPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E}"
     # Put recycling bin on desktop
     if(Test-Path -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum) {
         Remove-Item -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum
@@ -235,10 +234,10 @@ do {
             $urlFilesPublic = $publicNewArr | Where-Object { $_.Extension -eq ".url" }
             Write-Host "Identified $($lnkFilesPublic.Count) new .lnk files and $($urlFilesPublic.Count) new .url files for processing. in public"
             # Backup and rename
-            BackupNRename -ExistingCnt $userModCnt.ExistingLnkCnt -newFiles $lnkFilesUser -destinationFolder $destinationFolder
-            BackupNRename -ExistingCnt $userModCnt.ExistingUrlCnt -newFiles $urlFilesUser -destinationFolder $destinationFolder
-            BackupNRename -ExistingCnt $publicModCnt.ExistingLnkCnt -newFiles $lnkFilesPublic -destinationFolder $destinationFolderPublic
-            BackupNRename -ExistingCnt $publicModCnt.ExistingUrlCnt -newFiles $urlFilesPublic -destinationFolder $destinationFolderPublic
+            BackupNRename -existingCnt $userModCnt.ExistingLnkCnt -newFiles $lnkFilesUser -destinationFolder $destinationFolder
+            BackupNRename -existingCnt $userModCnt.ExistingUrlCnt -newFiles $urlFilesUser -destinationFolder $destinationFolder
+            BackupNRename -existingCnt $publicModCnt.ExistingLnkCnt -newFiles $lnkFilesPublic -destinationFolder $destinationFolderPublic
+            BackupNRename -existingCnt $publicModCnt.ExistingUrlCnt -newFiles $urlFilesPublic -destinationFolder $destinationFolderPublic
             Summary -includePublic "true"}
         A2 {
             Elevate -commandToRestart 1
@@ -252,8 +251,8 @@ do {
             $urlFilesUser = $userNewArr | Where-Object { $_.Extension -eq ".url" }
             Write-Host "Identified $($lnkFilesUser.Count) new .lnk files and $($urlFilesUser.Count) new .url files for processing in $username."
             # Backup and rename
-            BackupNRename -ExistingCnt $userModCnt.ExistingLnkCnt -newFiles $lnkFilesUser -destinationFolder $destinationFolder
-            BackupNRename -ExistingCnt $userModCnt.ExistingUrlCnt -newFiles $urlFilesUser -destinationFolder $destinationFolder
+            BackupNRename -existingCnt $userModCnt.ExistingLnkCnt -newFiles $lnkFilesUser -destinationFolder $destinationFolder
+            BackupNRename -existingCnt $userModCnt.ExistingUrlCnt -newFiles $urlFilesUser -destinationFolder $destinationFolder
             Summary -includePublic "false"}
         A3 {}
         B1 {RemoveIcon}
