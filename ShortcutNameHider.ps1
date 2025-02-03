@@ -14,7 +14,7 @@ $destinationFolder = "C:\Users\$username\Desktopbackup"
 $sourceFolderPublic = "C:\Users\Public\Desktop"
 $destinationFolderPublic = "C:\Users\Public\DesktopBackup"
 
-Function FindModified {
+Function FindLongestFilename {
     param (
         [string]$location,
         [string]$path
@@ -25,13 +25,22 @@ Function FindModified {
     $existingEmptyShortcuts = Get-ChildItem -Path $path -Force |
     Where-Object { $_.Extension -in ".lnk", ".url" -and $_.BaseName -match "^\s+$" }
 
-    # Separate counts for .lnk and .url files
-    $existingLnkCount = ($existingEmptyShortcuts | Where-Object { $_.Extension -eq ".lnk" }).Count
-    $existingUrlCount = ($existingEmptyShortcuts | Where-Object { $_.Extension -eq ".url" }).Count
+    # Find the longest .lnk filename
+    $longestLnk = ($existingEmptyShortcuts | Where-Object { $_.Extension -eq ".lnk" } |
+                   Sort-Object { $_.BaseName.Length } -Descending | Select-Object -First 1).BaseName.Length
 
-    Write-Host "Found $existingLnkCount pre-modified .lnk files and $existingUrlCount pre-modified .url files on $location desktop."
-    
-    return @{ ExistingLnkCnt = $existingLnkCount; ExistingUrlCnt = $existingUrlCount }
+    # Find the longest .url filename
+    $longestUrl = ($existingEmptyShortcuts | Where-Object { $_.Extension -eq ".url" } |
+                   Sort-Object { $_.BaseName.Length } -Descending | Select-Object -First 1).BaseName.Length
+
+    # If no files are found, set length to 0
+    if (-not $longestLnk) { $longestLnk = 0 }
+    if (-not $longestUrl) { $longestUrl = 0 }
+
+    Write-Host "Longest .lnk filename on $location desktop has $longestLnk characters."
+    Write-Host "Longest .url filename on $location desktop has $longestUrl characters."
+
+    return @{ LongestLnkLength = $longestLnk; LongestUrlLength = $longestUrl }
 }
 
 Function FindNew {
@@ -104,7 +113,8 @@ Function Summary {
     Write-Host "Backup folder: $destinationFolder"
     if(!$includePublic){Write-Host "Public Backup folder: $destinationFolderPublic"}
     Write-Host "$($lnkFilesUser.Count + $lnkFilesPublic.Count) .lnk files and $($urlFilesUser.Count + $urlFilesPublic.Count) .url files were renamed."
-    Write-Host "Total already existing empty shortcuts: $($userModCnt.ExistingLnkCnt + $publicModCnt.ExistingLnkCnt) .lnk, $($userModCnt.ExistingUrlCnt + $publicModCnt.ExistingUrlCnt) .url."
+    Write-Host "The longest pre-modified files found was a $($userLongest.LongestUrlLength) character long .url file and $($userLongest.LongestLnkLength) character long .url file on the user desktop (0 means none found)"
+    Write-Host "The longest pre-modified files found was a $($publicLongest.LongestUrlLength) character long .url file and $($publicLongest.LongestLnkLength) character long .url file on the public desktop (0 means none found)"
     Write-Host "------------------------------------------------"
 }
 
@@ -225,8 +235,8 @@ do {
             makeBackupFolder -folderToBackup $destinationFolder
             makeBackupFolder -folderToBackup $destinationFolderPublic
             # Find the count of already modified
-            $userModCnt = FindModified -location $username -path $sourceFolderUser
-            $publicModCnt = FindModified -location "Public" -path $sourceFolderPublic
+            $userModCnt = FindLongestFilename -location $username -path $sourceFolderUser
+            $publicModCnt = FindLongestFilename -location "Public" -path $sourceFolderPublic
             # Find the array of new icons
             $userNewArr = FindNew -location $username -path $sourceFolderUser
             $publicNewArr = FindNew -location "Public" -path $sourceFolderPublic
@@ -247,7 +257,8 @@ do {
             Elevate -commandToRestart 1
             makeBackupFolder -folderToBackup $destinationFolder
             # Find the count of already modified
-            $userModCnt = FindModified -location $username -path $sourceFolderUser
+#TODO: rename usermodcnt
+            $userModCnt = FindLongestFilename -location $username -path $sourceFolderUser
             # Find the array of new icons
             $userNewArr = FindNew -location $username -path $sourceFolderUser
             # Split up arrays into .url and .lnk
