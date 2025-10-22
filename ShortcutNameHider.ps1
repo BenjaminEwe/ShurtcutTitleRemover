@@ -3,81 +3,90 @@ param(
     [switch]$ElevatedRestart
 )
 
-# Get the current user's username
 $username = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name.Split("\")[-1]
-
-# Set source and destination folders for user
 $sourceFolderUser = "C:\Users\$username\Desktop"
 $destinationFolder = "C:\Users\$username\Desktopbackup"
-
-# Set source and destination folders for public
 $sourceFolderPublic = "C:\Users\Public\Desktop"
 $destinationFolderPublic = "C:\Users\Public\DesktopBackup"
 
-Function FindLongestFilename {
-    param (
-        [string]$location,
-        [string]$path
-    )
-    Write-Host "`nScanning $location desktop for shortcut files..."
+# Precon:   None
+# Input:    Desktop to check (TBD)
+# Output:   Array of all shortcuts (.lnk and .url)
+Function getShortcuts {
+    # TODO: Add parameter to allow passing of multiple desktops.
+    $userDesktopArr = Get-ChildItem -Path "sourceFolderUser"
+    $shortcutArr = @();
 
-    # Retrieve existing empty shortcuts (.lnk and .url with only spaces in name)
-    $existingEmptyShortcuts = Get-ChildItem -Path $path -Force |
-    Where-Object { $_.Extension -in ".lnk", ".url" -and $_.BaseName -match "^\s+$" }
-
-    # Find the longest .lnk filename
-    $longestLnk = ($existingEmptyShortcuts | Where-Object { $_.Extension -eq ".lnk" } |
-                   Sort-Object { $_.BaseName.Length } -Descending | Select-Object -First 1).BaseName.Length
-
-    # Find the longest .url filename
-    $longestUrl = ($existingEmptyShortcuts | Where-Object { $_.Extension -eq ".url" } |
-                   Sort-Object { $_.BaseName.Length } -Descending | Select-Object -First 1).BaseName.Length
-
-    # If no files are found, set length to 0
-    if (-not $longestLnk) { $longestLnk = 0 }
-    if (-not $longestUrl) { $longestUrl = 0 }
-
-    Write-Host "Longest .lnk filename on $location desktop has $longestLnk characters."
-    Write-Host "Longest .url filename on $location desktop has $longestUrl characters."
-
-    return @{ LongestLnkLength = $longestLnk; LongestUrlLength = $longestUrl }
-}
-
-Function FindNew {
-    param (
-        [string]$location,
-        [string]$path
-    )
-    # Get all new shortcuts (.lnk and .url), excluding existing empty ones
-    $newShortcuts = Get-ChildItem -Path $path -Force |
-    Where-Object { $_.Extension -in ".lnk", ".url" -and $_.BaseName -notmatch "^\s+$" }
-
-    $newShortcutsAmnt = $newShortcuts.count
-
-    Write-Host "Found $newShortcutsAmnt shortcuts that have not been renamed on $location desktop." 
-
-    return $newShortcuts
-}
-
-Function BackupNRename {
-    param (
-        [int]$existingCnt,
-        [array]$newFiles,
-        [string]$destinationFolder
-    )
-    $i = $existingCnt + 1
-    foreach ($file in $newFiles) {
-        # Remove the file if it has already been backed up
-        if (Test-Path "$destinationFolder\$($file.Name)"){
-            Remove-Item "$destinationFolder\$($file.Name)"
+    foreach ($item in $userDesktopArr) {
+        if ($item.Extension -eq ".lnk" -or $item.Extension -eq ".lnk") {
+            $shortcutArr += $item
         }
-        Copy-Item -Path $file.FullName -Destination $destinationFolder -Force
-        $newName = (" " * $i) + $file.Extension
-        Rename-Item -Path $file.FullName -NewName $newName -Force
-        Write-Host "Renamed: '$($file.Name)' to '$newName'"
-        $i++
     }
+    Write-Host "Shortcuts array produced"
+
+    return $shortcutArr
 }
+
+# Precon:   (Hard) makeBackupFolder must have been run to ensure the backupfolder exists
+# Input:    Array of shortcuts, destination to backup to
+# Output:   None
+Function backup {
+    param (
+        [array]$shortcutArr,
+        [string]$backupDest
+    )
+
+    foreach ($file in $shortcutArr) {
+        if (!$file.BaseName -match '^ +$') {
+            Copy-Item -Path $file.FullName -Destination $destinationFolder
+        }
+    }
+
+    Write-Host "Shortcuts have been backed up"
+}
+
+# Precon:   (soft) Shortcuts should be backed up first if backups are desired
+# Input:    Array of all shortcuts to be renamed
+# Output:   None
+Function rename {
+    param (
+        [array]$shortcutArr
+    )
+
+    # First renames shortcuts to name that is impropable to already exist to avoid conflicts.
+    $shortcutCnt = 0;
+    $renamedShortcuts = @()
+    foreach ($file in $shortcutArr) {
+        $shortcutCnt++
+        Rename-Item -Path $file.FullName -NewName ("RESERVED_BY_SHORTCUT-NAME-HIDER-" + $shortcutCnt + $file.Extension)
+        $renamedShortcuts += $file
+    }
+    Write-Host "Shortcuts have been renamed to temporary strings"
+
+    $shortcutArr = getShortcuts # Build new array of the newly renamed shortcuts
+
+    # Then renames shortcuts to the final empty name
+    $urlCnt, $lnkCnt = 0;
+    foreach ($file in $shortcutArr) {
+        if ($file.Extension -eq ".lnk") {
+            $lnkCnt++
+            Rename-Item -Path $file.FullName -NewName ((" " * $lnkCnt) + $file.Extension)
+
+        } elseif ($file.Extension -eq ".url") {
+            $urlCnt++
+            Rename-Item -Path $file.FullName -NewName ((" " * $urlCnt) + $file.Extension)
+        }
+        # Note: Could be simplified to not distinguish between .url and .lnk, but this ensures we dont run out of names as fast.
+    }
+    Write-Host "Shortcuts have been renamed to empty strings"
+}
+
+
+
+
+
+
+
 
 Function Elevate {
     # Takes in an input so that script knows wich function to auto-execute after restart
@@ -105,36 +114,20 @@ Function makeBackupFolder {
     }
 }
 
-Function Summary {
-    param (
-        [switch]$includePublic
-    )
-    Write-Host "`nProcessing complete!"
-    Write-Host "Backup folder: $destinationFolder"
-    if(!$includePublic){Write-Host "Public Backup folder: $destinationFolderPublic"}
-    Write-Host "$($lnkFilesUser.Count + $lnkFilesPublic.Count) .lnk files and $($urlFilesUser.Count + $urlFilesPublic.Count) .url files were renamed."
-    Write-Host "The longest pre-modified files found was a $($userLongest.LongestUrlLength) character long .url file and $($userLongest.LongestLnkLength) character long .url file on the user desktop (0 means none found)"
-    Write-Host "The longest pre-modified files found was a $($publicLongest.LongestUrlLength) character long .url file and $($publicLongest.LongestLnkLength) character long .url file on the public desktop (0 means none found)"
-    Write-Host "------------------------------------------------"
-}
-
 Function RemoveIcon {
     # Define blank icon 
     $imageBase64 = "AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAQAQAAAAAAAAAAAAAAAAAAAAAAAD//wECAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAA=="
-    $imageFolderLocation = "C:\ProgramData\ShortcutHider" # Define location for image file to be saved
-    $imageFileLocation = $imageFolderLocation + "\BlankIconForHidingShortcutArrow.ico" # Define file location
-    $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons" # Define registry path
-    $registryPropertyName = '29' # Define name of proprty
-    $registryPropertyType = 'String' # Define property type
+    $imageFolderLocation = "C:\ProgramData\ShortcutHider"
+    $imageFileLocation = $imageFolderLocation + "\BlankIconForHidingShortcutArrow.ico"
+    $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons" # Registry path for shortcut icon
+    $registryPropertyName = '29' # The property for the shortcut icon
+    $registryPropertyType = 'String' # Property type
 
     # test if image file exists, otherwise create it
     if (Test-Path $imageFileLocation){
         Write-Host "Icon already exists"
-    }
-    else {
+    } else {
         Write-Host "Will save the needed icon at " $imageFileLocation
-
-        # make directory to store icon
         New-Item -Path $imageFolderLocation -ItemType Directory | Out-Null
 
         #Decode Base64 to directory
@@ -191,34 +184,34 @@ Function RenameRecyclingBin {
     $recyclingPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E}"
     if(Test-Path -Path $recyclingPath) {
         Set-ItemProperty -Path $recyclingPath -Name "(Default)" -Value " " -Force | Out-Null
+        stop-process -name explorer
+        Write-Host "Recycling bin has been renamed"
     } else {
         Write-Host "Something seems to be wrong. Either the script is outdated or there are some weird problems with your recycling bin"
     }
-    stop-process -name explorer
-    Write-Host "Recycling bin has been renamed"
 }
 
 do {
     if (!$switchInput -or !$ElevatedRestart) {
         Write-Host "
     --Icon names-- 
-    A1. Remove the names of all icons [Affects all users of computer] [Administrator permissions needed]
+    A1. Remove the names of all icons [Affects all users] [Administrator permissions needed]
     A2. Remove the names of only the icons on your personal desktop
     A3. TBD Workaround to remove all shortcut names without affecting other users [Administrator permissions needed]
     
     --Shortcut arrow--
-    B1. Remove the shortcut arrow from shortcuts [Affects all users of computer] [Administrator permissions needed]
-    B2. Remove the shortcut arrow from shortcuts and restart explorer [Affects all users of computer] [Administrator permissions needed] [Save documents first]
+    B1. Remove shortcut arrow [Affects all users] [Administrator permissions needed]
+    B2. Remove shortcut arrow and restart explorer [Affects all users] [Administrator permissions needed]
     
     --UAC icons--
-    C1. TBD Remove UAC icon from shortcuts [Affects all users of computer] [Administrator permissions needed]
+    C1. TBD Remove UAC icon from shortcuts [Affects all users] [Administrator permissions needed]
     
     --Recycling Bin--
-    D1. Remove name from recycling bin
+    D1. Remove name of recycling bin
     D2. Remove recycling bin
     
     --Restore defaults--
-    U1. Restore Shortcut arrow back [Affects all users of computer] [Administrator permissions needed] [Save documents first]
+    U1. Restore Shortcut arrow back [Affects all users] [Administrator permissions needed]
     U2. Restore Recycling bin
     
     0. exit"
@@ -235,8 +228,8 @@ do {
             makeBackupFolder -folderToBackup $destinationFolder
             makeBackupFolder -folderToBackup $destinationFolderPublic
             # Find the count of already modified
-            $userModCnt = FindLongestFilename -location $username -path $sourceFolderUser
-            $publicModCnt = FindLongestFilename -location "Public" -path $sourceFolderPublic
+            $userLongest = FindLongestFilename -location $username -path $sourceFolderUser
+            $publicLongest = FindLongestFilename -location "Public" -path $sourceFolderPublic
             # Find the array of new icons
             $userNewArr = FindNew -location $username -path $sourceFolderUser
             $publicNewArr = FindNew -location "Public" -path $sourceFolderPublic
@@ -248,17 +241,17 @@ do {
             $urlFilesPublic = $publicNewArr | Where-Object { $_.Extension -eq ".url" }
             Write-Host "Identified $($lnkFilesPublic.Count) new .lnk files and $($urlFilesPublic.Count) new .url files for processing. in public"
             # Backup and rename
-            BackupNRename -existingCnt $userModCnt.ExistingLnkCnt -newFiles $lnkFilesUser -destinationFolder $destinationFolder
-            BackupNRename -existingCnt $userModCnt.ExistingUrlCnt -newFiles $urlFilesUser -destinationFolder $destinationFolder
-            BackupNRename -existingCnt $publicModCnt.ExistingLnkCnt -newFiles $lnkFilesPublic -destinationFolder $destinationFolderPublic
-            BackupNRename -existingCnt $publicModCnt.ExistingUrlCnt -newFiles $urlFilesPublic -destinationFolder $destinationFolderPublic
+            BackupNRename -existingCnt $userLongest.ExistingLnkCnt -newFiles $lnkFilesUser -destinationFolder $destinationFolder
+            BackupNRename -existingCnt $userLongest.ExistingUrlCnt -newFiles $urlFilesUser -destinationFolder $destinationFolder
+            BackupNRename -existingCnt $publicLongest.ExistingLnkCnt -newFiles $lnkFilesPublic -destinationFolder $destinationFolderPublic
+            BackupNRename -existingCnt $publicLongest.ExistingUrlCnt -newFiles $urlFilesPublic -destinationFolder $destinationFolderPublic
+            
             Summary -includePublic "true"}
         A2 {
             Elevate -commandToRestart 1
             makeBackupFolder -folderToBackup $destinationFolder
             # Find the count of already modified
-#TODO: rename usermodcnt
-            $userModCnt = FindLongestFilename -location $username -path $sourceFolderUser
+            $userLongest = FindLongestFilename -location $username -path $sourceFolderUser
             # Find the array of new icons
             $userNewArr = FindNew -location $username -path $sourceFolderUser
             # Split up arrays into .url and .lnk
@@ -266,8 +259,8 @@ do {
             $urlFilesUser = $userNewArr | Where-Object { $_.Extension -eq ".url" }
             Write-Host "Identified $($lnkFilesUser.Count) new .lnk files and $($urlFilesUser.Count) new .url files for processing in $username."
             # Backup and rename
-            BackupNRename -existingCnt $userModCnt.ExistingLnkCnt -newFiles $lnkFilesUser -destinationFolder $destinationFolder
-            BackupNRename -existingCnt $userModCnt.ExistingUrlCnt -newFiles $urlFilesUser -destinationFolder $destinationFolder
+            BackupNRename -existingCnt $userLongest.ExistingLnkCnt -newFiles $lnkFilesUser -destinationFolder $destinationFolder
+            BackupNRename -existingCnt $userLongest.ExistingUrlCnt -newFiles $urlFilesUser -destinationFolder $destinationFolder
             Summary -includePublic "false"}
         A3 {}
         B1 {RemoveIcon}
