@@ -66,7 +66,7 @@ Function rename {
         [String]$folderToBackup
     )
 
-    # First renames shortcuts to name that is impropable to already exist to avoid conflicts.
+    # First renames shortcuts to name that is improbable to already exist to avoid conflicts.
     $shortcutCnt = 0;
     foreach ($file in $shortcutArr) {
         Write-Debug "renaming $file"
