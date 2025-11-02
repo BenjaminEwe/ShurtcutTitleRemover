@@ -17,16 +17,20 @@ Function getShortcuts {
     param (
         [String]$folderToBackup
     )
-    # TODO: Add parameter to allow passing of multiple desktops.
     $FolderItemArr = Get-ChildItem -Path $folderToBackup
     $shortcutArr = @();
 
+    Write-Debug "List of items found in folder $folderToBackup `n $FolderItemArr"
+
     foreach ($item in $FolderItemArr) {
-        if ($item.Extension -eq ".lnk" -or $item.Extension -eq ".lnk") {
+        if ($item.Extension -eq ".lnk" -or $item.Extension -eq ".url") {
             $shortcutArr += $item
         }
     }
-    Write-Host "Shortcuts array produced"
+    Write-Debug "Shortcuts array produced. List of items in the `$shortcutArr"
+    foreach ($item in $shortcutArr) {
+        Write-Debug $item
+    }
 
     return $shortcutArr
 }
@@ -46,7 +50,7 @@ Function backup {
         }
     }
 
-    Write-Host "Shortcuts have been backed up"
+    Write-Debug "Shortcuts have been backed up to $backupDest"
 }
 
 # Precon:   (soft) Shortcuts should be backed up first if backups are desired
@@ -60,22 +64,19 @@ Function rename {
 
     # First renames shortcuts to name that is impropable to already exist to avoid conflicts.
     $shortcutCnt = 0;
-    $renamedShortcuts = @()
     foreach ($file in $shortcutArr) {
-        Write-Host $file
+        Write-Debug "renaming $file"
         $shortcutCnt++
         Rename-Item -Path $file.FullName -NewName ("RESERVED_BY_SHORTCUT-NAME-HIDER-" + $shortcutCnt + $file.Extension)
-        $renamedShortcuts += $file # TODO: Why do we save this?
     }
-    Write-Host "Shortcuts have been renamed to temporary strings"
+    Write-Debug "Shortcuts have been renamed to temporary strings"
 
 
     $shortcutArr = getShortcuts -folderToBackup $folderToBackup # Build new array of the newly renamed shortcuts
-    # TODO: update to support passign variable to getShortcuts
 
-    # Then renames shortcuts to the final empty name
     $urlCnt, $lnkCnt = 0;
     foreach ($file in $shortcutArr) {
+        Write-Debug "renaming $file"
         if ($file.Extension -eq ".lnk") {
             $lnkCnt++
             Rename-Item -Path $file.FullName -NewName ((" " * $lnkCnt) + $file.Extension)
@@ -85,7 +86,7 @@ Function rename {
             Rename-Item -Path $file.FullName -NewName ((" " * $urlCnt) + $file.Extension)
         }
     }
-    Write-Host "Shortcuts have been renamed to empty strings"
+    Write-Debug "Shortcuts have been renamed to empty strings"
 }
 
 
@@ -115,9 +116,9 @@ Function makeBackupFolder {
     # Ensure backup folder exists, make new if not
     if (!(Test-Path $folderToBackup)) { 
         New-Item -Path $folderToBackup -ItemType Directory | Out-Null
-        Write-Host "Created backup folder: $folderToBackup"
+        Write-Debug "Created backup folder: $folderToBackup"
     } else {
-        Write-Host "Backup folder already exists: $folderToBackup"
+        Write-Debug "Backup folder already exists: $folderToBackup"
     }
 }
 
@@ -132,9 +133,9 @@ Function RemoveIcon {
 
     # test if image file exists, otherwise create it
     if (Test-Path $imageFileLocation){
-        Write-Host "Icon already exists"
+        Write-Debug "Icon already exists"
     } else {
-        Write-Host "Will save the needed icon at " $imageFileLocation
+        Write-Debug "Will save the needed icon at " $imageFileLocation
         New-Item -Path $imageFolderLocation -ItemType Directory | Out-Null
 
         #Decode Base64 to directory
@@ -173,18 +174,20 @@ Function RemoveRecyclingBin {
     }
     Set-ItemProperty -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum -Name "{645FF040-5081-101B-9F08-00AA002F954E}" -Value 1 -Type DWord
     stop-process -name explorer
-    Write-Host "Recycling bin has been hidden from desktop"
+    Write-Debug "Recycling bin has been hidden from desktop"
 }
 
 Function RestoreRecyclingBin {
     # Put recycling bin on desktop
-    if(Test-Path -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum) {
+    if (Test-Path -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum) {
         Remove-Item -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum
     }
-    # Revert name of recycling bin - apparently powershell is incapable of this so we have to use CMD for it
-    cmd /c reg delete "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E}" /ve /f
+    
+    # Restore the name of the recycling bin
+    Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E}" -Name *
+
     stop-process -name explorer
-    Write-Host "Recycling Bin has been restored"
+    Write-Debug "Recycling Bin has been restored"
 }
 
 Function RenameRecyclingBin {
@@ -192,16 +195,17 @@ Function RenameRecyclingBin {
     if(Test-Path -Path $recyclingPath) {
         Set-ItemProperty -Path $recyclingPath -Name "(Default)" -Value " " -Force | Out-Null
         stop-process -name explorer
-        Write-Host "Recycling bin has been renamed"
+        Write-Debug "Recycling bin has been renamed"
     } else {
-        Write-Host "Something seems to be wrong. Either the script is outdated or there are some weird problems with your recycling bin"
+        Write-Warning "Something seems to be wrong. Either the script is outdated or there are some weird problems with your recycling bin"
     }
 }
 
 function Show-Menu {
-    ## Clear-Host
+    if ($DebugPreference -eq "SilentlyContinue") {
+        Clear-Host
+    }
     
-    # TODO: Consolidate this variable with the other one?
     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
     Write-Host " ╔════════════════════════ ShurtcutTitleRemover ════════════════════════╗" 
@@ -246,7 +250,7 @@ function Show-Menu {
     Write-Host " ║                                                                      ║"
     Write-Host " ║ Recycle Bin:                                                         ║" 
     Write-Host " ║   D1 - Remove Recycle Bin name                                       ║"
-    Write-Host " ║   D2 - Remove Recycle Bin icon                                       ║"
+    Write-Host " ║   D2 - Remove Recycle Bin shortcut                                   ║"
     Write-Host " ║                                                                      ║"
     Write-Host " ║ Restore Defaults:                                                    ║" 
     Write-Host " ║   U1 - Restore shortcut arrow 🌐" -NoNewline
@@ -290,7 +294,7 @@ do {
             $shortcutsUser = getShortcuts -folderToBackup $sourceFolderUser
             makeBackupFolder -folderToBackup $destinationFolderUser
             backup -shortcutArr $shortcutsUser -backupDest $destinationFolderUser
-            rename -shortcutArr $shortcutsUser
+            rename -shortcutArr $shortcutsUser -folderToBackup $sourceFolderUser
         }
         A3 {}
         B {RemoveIcon; stop-process -name explorer}
