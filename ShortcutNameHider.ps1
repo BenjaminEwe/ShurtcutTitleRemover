@@ -15,18 +15,18 @@ $destinationFolderPublic = "C:\Users\Public\.DesktopBackup"
 # Input:    Desktop to check (TBD)
 # Output:   Array of all shortcuts (.lnk and .url)
 # Note:     Finds all shortcuts in a given folder and adds them to array. 
-Function getShortcuts {
+Function Get-Shortcuts {
     param (
         [String]$folderToBackup
     )
     $FolderItemArr = Get-ChildItem -Path $folderToBackup
-    $shortcutArr = @();
+    $shortcutArr = [System.Collections.ArrayList]::new()
 
     Write-Debug "List of items found in folder $folderToBackup `n $FolderItemArr"
 
     foreach ($item in $FolderItemArr) {
         if ($item.Extension -eq ".lnk" -or $item.Extension -eq ".url") {
-            $shortcutArr += $item
+            $shortcutArr.Add($item) | Out-Null
         }
     }
     Write-Debug "Shortcuts array produced. List of items in the `$shortcutArr"
@@ -37,10 +37,10 @@ Function getShortcuts {
     return $shortcutArr
 }
 
-# Precon:   (Hard) makeBackupFolder must have been run to ensure the backupfolder exists
+# Precon:   (Hard) Make-Backup-Folder must have been run to ensure the backupfolder exists
 # Input:    Array of shortcuts, destination to backup to
 # Note:     This finds all the shortcuts in the arrays whose names are *not* just spaces, and makes a backup copy of them @ backupDest.
-Function backup {
+Function Backup-Shortcuts {
     param (
         [array]$shortcutArr,
         [string]$backupDest
@@ -60,7 +60,7 @@ Function backup {
 # Precon:   (soft) Shortcuts should be backed up first if backups are desired
 # Input:    Array of all shortcuts to be renamed
 # Note:     Renames all the shortcuts to increasingly long empty names.
-Function rename {
+Function Rename-Shortcuts {
     param (
         [array]$shortcutArr,
         [String]$folderToBackup
@@ -76,7 +76,7 @@ Function rename {
     Write-Debug "Shortcuts have been renamed to temporary strings"
 
 
-    $shortcutArr = getShortcuts -folderToBackup $folderToBackup # Build new array of the newly renamed shortcuts
+    $shortcutArr = Get-Shortcuts -folderToBackup $folderToBackup # Build new array of the newly renamed shortcuts
 
     $urlCnt = 0; $lnkCnt = 0;
     foreach ($file in $shortcutArr) {
@@ -104,9 +104,9 @@ Function Elevate {
         Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -commandToRun $commandToRestart"
         exit
     }
- }
+}
 
-Function makeBackupFolder {
+Function Make-Backup-Folder {
     param (
         [string]$folderToBackup
     )
@@ -119,7 +119,7 @@ Function makeBackupFolder {
     }
 }
 
-Function RemoveIcon {
+Function Remove-Icon {
     # Define blank icon 
     $imageBase64 = "AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAQAQAAAAAAAAAAAAAAAAAAAAAAAD//wECAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAA=="
     $imageFolderLocation = "C:\ProgramData\ShortcutHider"
@@ -165,7 +165,7 @@ Function RemoveIcon {
     }
 }
 
-Function RemoveRecyclingBin {
+Function Remove-Recycling-Bin {
     if((Test-Path -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum) -eq $false) {
         New-Item -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies -Name "NonEnum"
     }
@@ -174,7 +174,7 @@ Function RemoveRecyclingBin {
     Write-Debug "Recycling bin has been hidden from desktop"
 }
 
-Function RestoreRecyclingBin {
+Function Restore-Recycling-Bin {
     # Put recycling bin on desktop
     if (Test-Path -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum) {
         Remove-Item -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum
@@ -187,7 +187,7 @@ Function RestoreRecyclingBin {
     Write-Debug "Recycling Bin has been restored"
 }
 
-Function RenameRecyclingBin {
+Function Rename-Recycling-Bin {
     $recyclingPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E}"
     if(Test-Path -Path $recyclingPath) {
         Set-ItemProperty -Path $recyclingPath -Name "(Default)" -Value " " -Force | Out-Null
@@ -293,29 +293,29 @@ do {
         A1 { 
             Elevate -commandToRestart "A1"
 
-            $shortcutsUser = getShortcuts -folderToBackup $sourceFolderUser
-            $shortcutsPublic = getShortcuts -folderToBackup $sourceFolderPublic
-            makeBackupFolder -folderToBackup $destinationFolderUser
-            makeBackupFolder -folderToBackup $destinationFolderPublic
-            backup -shortcutArr $shortcutsUser -backupDest $destinationFolderUser
-            backup -shortcutArr $shortcutsPublic -backupDest $destinationFolderPublic
-            rename -shortcutArr $shortcutsUser -folderToBackup $sourceFolderUser
-            rename -shortcutArr $shortcutsPublic -folderToBackup $sourceFolderPublic
+            $shortcutsUser = Get-Shortcuts -folderToBackup $sourceFolderUser
+            $shortcutsPublic = Get-Shortcuts -folderToBackup $sourceFolderPublic
+            Make-Backup-Folder -folderToBackup $destinationFolderUser
+            Make-Backup-Folder -folderToBackup $destinationFolderPublic
+            Backup-Shortcuts -shortcutArr $shortcutsUser -backupDest $destinationFolderUser
+            Backup-Shortcuts -shortcutArr $shortcutsPublic -backupDest $destinationFolderPublic
+            Rename-Shortcuts -shortcutArr $shortcutsUser -folderToBackup $sourceFolderUser
+            Rename-Shortcuts -shortcutArr $shortcutsPublic -folderToBackup $sourceFolderPublic
         }
         A2 {
-            $shortcutsUser = getShortcuts -folderToBackup $sourceFolderUser
-            makeBackupFolder -folderToBackup $destinationFolderUser
-            backup -shortcutArr $shortcutsUser -backupDest $destinationFolderUser
-            rename -shortcutArr $shortcutsUser -folderToBackup $sourceFolderUser
+            $shortcutsUser = Get-Shortcuts -folderToBackup $sourceFolderUser
+            Make-Backup-Folder -folderToBackup $destinationFolderUser
+            Backup-Shortcuts -shortcutArr $shortcutsUser -backupDest $destinationFolderUser
+            Rename-Shortcuts -shortcutArr $shortcutsUser -folderToBackup $sourceFolderUser
         }
         B {
             Elevate -commandToRestart "B"
 
-            RemoveIcon
+            Remove-Icon
             stop-process -name explorer
         }
-        D1 {RenameRecyclingBin}
-        D2 {RemoveRecyclingBin}
+        D1 {Rename-Recycling-Bin}
+        D2 {Remove-Recycling-Bin}
         U1 {
             Elevate -commandToRestart "U1"
 
@@ -326,7 +326,7 @@ do {
                 Write-Host "The icon should already be back. Try restarting the computer if it is still missing"
             }
         }
-        U2 {RestoreRecyclingBin}
+        U2 {Restore-Recycling-Bin}
         U3 {Restore-Icons}
     }
 } while ($true)
