@@ -1,23 +1,27 @@
-# Param needed for script to know if it has restarted itself in administrator or not.
+﻿# Param needed for script to know if it has restarted itself in administrator or not.
 param(
     [switch]$ElevatedRestart
 )
 
 $username = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name.Split("\")[-1]
 $sourceFolderUser = "C:\Users\$username\Desktop"
-$destinationFolder = "C:\Users\$username\Desktopbackup"
+$destinationFolderUser = "C:\Users\$username\.DesktopBackup"
 $sourceFolderPublic = "C:\Users\Public\Desktop"
-$destinationFolderPublic = "C:\Users\Public\DesktopBackup"
+$destinationFolderPublic = "C:\Users\Public\.DesktopBackup"
 
 # Precon:   None
 # Input:    Desktop to check (TBD)
 # Output:   Array of all shortcuts (.lnk and .url)
+# Note:     Finds all shortcuts in a given folder and adds them to array. 
 Function getShortcuts {
+    param (
+        [String]$folderToBackup
+    )
     # TODO: Add parameter to allow passing of multiple desktops.
-    $userDesktopArr = Get-ChildItem -Path "sourceFolderUser"
+    $FolderItemArr = Get-ChildItem -Path $folderToBackup
     $shortcutArr = @();
 
-    foreach ($item in $userDesktopArr) {
+    foreach ($item in $FolderItemArr) {
         if ($item.Extension -eq ".lnk" -or $item.Extension -eq ".lnk") {
             $shortcutArr += $item
         }
@@ -29,7 +33,7 @@ Function getShortcuts {
 
 # Precon:   (Hard) makeBackupFolder must have been run to ensure the backupfolder exists
 # Input:    Array of shortcuts, destination to backup to
-# Output:   None
+# Note:     This finds all the shortcuts in the arrays whose names are *not* just spaces, and makes a backup copy of them @ backupDest.
 Function backup {
     param (
         [array]$shortcutArr,
@@ -38,7 +42,7 @@ Function backup {
 
     foreach ($file in $shortcutArr) {
         if (!$file.BaseName -match '^ +$') {
-            Copy-Item -Path $file.FullName -Destination $destinationFolder
+            Copy-Item -Path $file.FullName -Destination $backupDest
         }
     }
 
@@ -47,23 +51,27 @@ Function backup {
 
 # Precon:   (soft) Shortcuts should be backed up first if backups are desired
 # Input:    Array of all shortcuts to be renamed
-# Output:   None
+# Note:     Renames all the shortcuts to increasingly long empty names.
 Function rename {
     param (
-        [array]$shortcutArr
+        [array]$shortcutArr,
+        [String]$folderToBackup
     )
 
     # First renames shortcuts to name that is impropable to already exist to avoid conflicts.
     $shortcutCnt = 0;
     $renamedShortcuts = @()
     foreach ($file in $shortcutArr) {
+        Write-Host $file
         $shortcutCnt++
         Rename-Item -Path $file.FullName -NewName ("RESERVED_BY_SHORTCUT-NAME-HIDER-" + $shortcutCnt + $file.Extension)
-        $renamedShortcuts += $file
+        $renamedShortcuts += $file # TODO: Why do we save this?
     }
     Write-Host "Shortcuts have been renamed to temporary strings"
 
-    $shortcutArr = getShortcuts # Build new array of the newly renamed shortcuts
+
+    $shortcutArr = getShortcuts -folderToBackup $folderToBackup # Build new array of the newly renamed shortcuts
+    # TODO: update to support passign variable to getShortcuts
 
     # Then renames shortcuts to the final empty name
     $urlCnt, $lnkCnt = 0;
@@ -76,7 +84,6 @@ Function rename {
             $urlCnt++
             Rename-Item -Path $file.FullName -NewName ((" " * $urlCnt) + $file.Extension)
         }
-        # Note: Could be simplified to not distinguish between .url and .lnk, but this ensures we dont run out of names as fast.
     }
     Write-Host "Shortcuts have been renamed to empty strings"
 }
@@ -191,30 +198,74 @@ Function RenameRecyclingBin {
     }
 }
 
+function Show-Menu {
+    ## Clear-Host
+    
+    # TODO: Consolidate this variable with the other one?
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+    Write-Host " ╔════════════════════════ ShurtcutTitleRemover ════════════════════════╗" 
+    Write-Host " ║ Running as: " -NoNewline -ForegroundColor Gray
+    if ($isAdmin) {
+        Write-Host "Administrator" -NoNewline -ForegroundColor Green
+        Write-Host "                                            ║"
+    } else {
+        Write-Host "Standard User (some options unavailable)" -NoNewline -ForegroundColor DarkYellow
+        Write-Host "                                ║"
+    }
+    Write-Host " ║                                                                      ║"
+    Write-Host " ║ Options marked with 🌐 affect all users of this computer             ║"
+    Write-Host " ║                                                                      ║"
+    Write-Host " ║ Icon Names:                                                          ║"
+    Write-Host " ║   A1 - Remove all icon names 🌐" -NoNewline
+    if (-not $isAdmin) {
+        Write-Host " [Admin]" -NoNewline -ForegroundColor DarkYellow 
+        Write-Host "                              ║"
+    } else {
+        Write-Host "                                      ║"
+    }
+    Write-Host " ║   A2 - Remove personal desktop icon names                            ║"
+    Write-Host " ║                                                                      ║"
+    Write-Host " ║ Shortcut Arrow:                                                      ║" 
+    Write-Host " ║   B  - Remove shortcut arrow 🌐" -NoNewline
+    if (-not $isAdmin) { 
+        Write-Host " [Admin]" -NoNewline -ForegroundColor DarkYellow
+        Write-Host "                              ║"
+    } else {
+        Write-Host "                                      ║"
+    }
+    Write-Host " ║                                                                      ║"
+    Write-Host " ║ UAC Shield:                                                          ║" 
+    Write-Host " ║   C1 - Remove UAC shield from shortcuts 🌐?" -NoNewline
+    if (-not $isAdmin) { 
+        Write-Host " [Admin]" -NoNewline -ForegroundColor DarkYellow 
+        Write-Host "                  ║" 
+    } else {
+        Write-Host "                          ║"
+    }
+    Write-Host " ║                                                                      ║"
+    Write-Host " ║ Recycle Bin:                                                         ║" 
+    Write-Host " ║   D1 - Remove Recycle Bin name                                       ║"
+    Write-Host " ║   D2 - Remove Recycle Bin icon                                       ║"
+    Write-Host " ║                                                                      ║"
+    Write-Host " ║ Restore Defaults:                                                    ║" 
+    Write-Host " ║   U1 - Restore shortcut arrow 🌐" -NoNewline
+    if (-not $isAdmin) { 
+        Write-Host " [Admin]" -NoNewline -ForegroundColor DarkYellow 
+        Write-Host "                             ║"
+    } else {
+        Write-Host "                                     ║"
+    }
+    Write-Host " ║   U2 - Restore Recycle Bin                                           ║"
+    Write-Host " ║                                                                      ║"
+    Write-Host " ║   0  - Exit                                                          ║"
+    Write-Host " ╚══════════════════════════════════════════════════════════════════════╝"
+}
+
+
 do {
     if (!$switchInput -or !$ElevatedRestart) {
-        Write-Host "
-    --Icon names-- 
-    A1. Remove the names of all icons [Affects all users] [Administrator permissions needed]
-    A2. Remove the names of only the icons on your personal desktop
-    A3. TBD Workaround to remove all shortcut names without affecting other users [Administrator permissions needed]
-    
-    --Shortcut arrow--
-    B1. Remove shortcut arrow [Affects all users] [Administrator permissions needed]
-    B2. Remove shortcut arrow and restart explorer [Affects all users] [Administrator permissions needed]
-    
-    --UAC icons--
-    C1. TBD Remove UAC icon from shortcuts [Affects all users] [Administrator permissions needed]
-    
-    --Recycling Bin--
-    D1. Remove name of recycling bin
-    D2. Remove recycling bin
-    
-    --Restore defaults--
-    U1. Restore Shortcut arrow back [Affects all users] [Administrator permissions needed]
-    U2. Restore Recycling bin
-    
-    0. exit"
+        Show-Menu
         $switchInput = Read-Host "Select an option"
     }
 
@@ -225,46 +276,24 @@ do {
         0 {exit}
         A1 { 
             Elevate -commandToRestart 1
-            makeBackupFolder -folderToBackup $destinationFolder
+
+            $shortcutsUser = getShortcuts -folderToBackup $sourceFolderUser
+            $shortcutsPublic = getShortcuts -folderToBackup $sourceFolderPublic
+            makeBackupFolder -folderToBackup $destinationFolderUser
             makeBackupFolder -folderToBackup $destinationFolderPublic
-            # Find the count of already modified
-            $userLongest = FindLongestFilename -location $username -path $sourceFolderUser
-            $publicLongest = FindLongestFilename -location "Public" -path $sourceFolderPublic
-            # Find the array of new icons
-            $userNewArr = FindNew -location $username -path $sourceFolderUser
-            $publicNewArr = FindNew -location "Public" -path $sourceFolderPublic
-            # Split up arrays into .url and .lnk
-            $lnkFilesUser = $userNewArr | Where-Object { $_.Extension -eq ".lnk" }
-            $urlFilesUser = $userNewArr | Where-Object { $_.Extension -eq ".url" }
-            Write-Host "Identified $($lnkFilesUser.Count) new .lnk files and $($urlFilesUser.Count) new .url files for processing in $username."
-            $lnkFilesPublic = $publicNewArr | Where-Object { $_.Extension -eq ".lnk" }
-            $urlFilesPublic = $publicNewArr | Where-Object { $_.Extension -eq ".url" }
-            Write-Host "Identified $($lnkFilesPublic.Count) new .lnk files and $($urlFilesPublic.Count) new .url files for processing. in public"
-            # Backup and rename
-            BackupNRename -existingCnt $userLongest.ExistingLnkCnt -newFiles $lnkFilesUser -destinationFolder $destinationFolder
-            BackupNRename -existingCnt $userLongest.ExistingUrlCnt -newFiles $urlFilesUser -destinationFolder $destinationFolder
-            BackupNRename -existingCnt $publicLongest.ExistingLnkCnt -newFiles $lnkFilesPublic -destinationFolder $destinationFolderPublic
-            BackupNRename -existingCnt $publicLongest.ExistingUrlCnt -newFiles $urlFilesPublic -destinationFolder $destinationFolderPublic
-            
-            Summary -includePublic "true"}
+            backup -shortcutArr $shortcutsUser -backupDest $destinationFolderUser
+            backup -shortcutArr $shortcutsPublic -backupDest $destinationFolderPublic
+            rename -shortcutArr $shortcutsUser -folderToBackup $sourceFolderUser
+            rename -shortcutArr $shortcutsPublic -folderToBackup $sourceFolderPublic
+        }
         A2 {
-            Elevate -commandToRestart 1
-            makeBackupFolder -folderToBackup $destinationFolder
-            # Find the count of already modified
-            $userLongest = FindLongestFilename -location $username -path $sourceFolderUser
-            # Find the array of new icons
-            $userNewArr = FindNew -location $username -path $sourceFolderUser
-            # Split up arrays into .url and .lnk
-            $lnkFilesUser = $userNewArr | Where-Object { $_.Extension -eq ".lnk" }
-            $urlFilesUser = $userNewArr | Where-Object { $_.Extension -eq ".url" }
-            Write-Host "Identified $($lnkFilesUser.Count) new .lnk files and $($urlFilesUser.Count) new .url files for processing in $username."
-            # Backup and rename
-            BackupNRename -existingCnt $userLongest.ExistingLnkCnt -newFiles $lnkFilesUser -destinationFolder $destinationFolder
-            BackupNRename -existingCnt $userLongest.ExistingUrlCnt -newFiles $urlFilesUser -destinationFolder $destinationFolder
-            Summary -includePublic "false"}
+            $shortcutsUser = getShortcuts -folderToBackup $sourceFolderUser
+            makeBackupFolder -folderToBackup $destinationFolderUser
+            backup -shortcutArr $shortcutsUser -backupDest $destinationFolderUser
+            rename -shortcutArr $shortcutsUser
+        }
         A3 {}
-        B1 {RemoveIcon}
-        B2 {RemoveIcon; stop-process -name explorer}
+        B {RemoveIcon; stop-process -name explorer}
         C1 {}
         D1 {RenameRecyclingBin}
         D2 {RemoveRecyclingBin}
