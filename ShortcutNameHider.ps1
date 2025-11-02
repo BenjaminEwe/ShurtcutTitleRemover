@@ -3,6 +3,9 @@ param(
     [switch]$ElevatedRestart
 )
 
+Set-StrictMode -Version Latest
+
+
 $username = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name.Split("\")[-1]
 $sourceFolderUser = "C:\Users\$username\Desktop"
 $destinationFolderUser = "C:\Users\$username\.DesktopBackup"
@@ -130,7 +133,7 @@ Function RemoveIcon {
     if (Test-Path $imageFileLocation){
         Write-Debug "Icon already exists"
     } else {
-        Write-Debug "Will save the needed icon at " $imageFileLocation
+        Write-Debug "Will save the needed icon at $imageFileLocation"
         New-Item -Path $imageFolderLocation -ItemType Directory | Out-Null
 
         #Decode Base64 to directory
@@ -275,11 +278,8 @@ function Show-Menu {
 
 
 do {
-    if (!$switchInput -or !$ElevatedRestart) {
-        Show-Menu
-        $switchInput = Read-Host "Select an option"
-    }
-
+    Show-Menu
+    $switchInput = Read-Host "Select an option"
     Clear-Host
 
     switch ($switchInput)
