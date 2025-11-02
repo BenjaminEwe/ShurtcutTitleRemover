@@ -78,7 +78,7 @@ Function rename {
 
     $shortcutArr = getShortcuts -folderToBackup $folderToBackup # Build new array of the newly renamed shortcuts
 
-    $urlCnt, $lnkCnt = 0;
+    $urlCnt = 0; $lnkCnt = 0;
     foreach ($file in $shortcutArr) {
         Write-Debug "renaming $file"
         if ($file.Extension -eq ".lnk") {
