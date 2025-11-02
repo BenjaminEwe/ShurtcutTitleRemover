@@ -216,7 +216,7 @@ function Show-Menu {
     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
     Write-Host ""
-    Write-Host " ╔════════════════════════ ShurtcutTitleRemover ════════════════════════╗" 
+    Write-Host " ╔════════════════════════ ShortcutTitleRemover ════════════════════════╗" 
     Write-Host " ║ Running as: " -NoNewline -ForegroundColor Gray
     if ($isAdmin) {
         Write-Host "Administrator" -NoNewline -ForegroundColor Green
