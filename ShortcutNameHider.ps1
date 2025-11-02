@@ -94,7 +94,7 @@ Function rename {
 }
 
 Function Elevate {
-    # Takes in an input so that script knows wich function to auto-execute after restart
+    # Takes in an input so that script knows which function to auto-execute after restart
     param (
         [String]$commandToRestart
     )
