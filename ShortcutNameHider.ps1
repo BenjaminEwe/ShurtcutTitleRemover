@@ -1,6 +1,5 @@
-﻿# Param needed for script to know if it has restarted itself in administrator or not.
-param(
-    [switch]$ElevatedRestart
+﻿param(
+    [String]$commandToRun
 )
 
 Set-StrictMode -Version Latest
@@ -97,12 +96,12 @@ Function rename {
 Function Elevate {
     # Takes in an input so that script knows wich function to auto-execute after restart
     param (
-        [int]$commandToRestart
+        [String]$commandToRestart
     )
     
     if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         Write-Verbose "Not running as administrator. Restarting with elevation..." -Verbose
-        Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -$commandToRestart"
+        Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -commandToRun $commandToRestart"
         exit
     }
  }
@@ -278,15 +277,21 @@ function Show-Menu {
 
 
 do {
-    Show-Menu
-    $switchInput = Read-Host "Select an option"
-    Clear-Host
+    if ((Test-Path variable:commandToRun) -and ($commandToRun -ne "")) {
+        Write-Host "$commandToRun"
+        $switchInput = $commandToRun
+        $commandToRun = ""
+    } else {
+        Show-Menu
+        $switchInput = Read-Host "Select an option"
+        Clear-Host
+    }
 
     switch ($switchInput)
     {
         0 {exit}
         A1 { 
-            Elevate -commandToRestart 1
+            Elevate -commandToRestart "A1"
 
             $shortcutsUser = getShortcuts -folderToBackup $sourceFolderUser
             $shortcutsPublic = getShortcuts -folderToBackup $sourceFolderPublic
@@ -303,10 +308,17 @@ do {
             backup -shortcutArr $shortcutsUser -backupDest $destinationFolderUser
             rename -shortcutArr $shortcutsUser -folderToBackup $sourceFolderUser
         }
-        B {RemoveIcon; stop-process -name explorer}
+        B {
+            Elevate -commandToRestart "B"
+
+            RemoveIcon
+            stop-process -name explorer
+        }
         D1 {RenameRecyclingBin}
         D2 {RemoveRecyclingBin}
         U1 {
+            Elevate -commandToRestart "U1"
+
             if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons") {
                 Remove-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons"
                 stop-process -name explorer
