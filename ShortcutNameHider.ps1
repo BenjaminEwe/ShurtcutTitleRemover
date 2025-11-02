@@ -45,7 +45,9 @@ Function backup {
     )
 
     foreach ($file in $shortcutArr) {
-        if (!$file.BaseName -match '^ +$') {
+        Write-Debug "Backing up $file"
+        if (!($file.BaseName -match '^ +$')) {
+            Write-Debug "$file seems to be a real name, backing up the shortcut"
             Copy-Item -Path $file.FullName -Destination $backupDest
         }
     }
@@ -88,13 +90,6 @@ Function rename {
     }
     Write-Debug "Shortcuts have been renamed to empty strings"
 }
-
-
-
-
-
-
-
 
 Function Elevate {
     # Takes in an input so that script knows wich function to auto-execute after restart
@@ -201,6 +196,16 @@ Function RenameRecyclingBin {
     }
 }
 
+Function Restore-Icons {
+    Write-Host "Manually copy the icons over, and delete the ones with empty names."
+    if (Test-Path $destinationFolderUser) {
+        explorer $destinationFolderUser
+    }
+    if (Test-Path $destinationFolderPublic) {
+        explorer $destinationFolderPublic
+    }
+}
+
 function Show-Menu {
     if ($DebugPreference -eq "SilentlyContinue") {
         Clear-Host
@@ -208,6 +213,7 @@ function Show-Menu {
     
     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
+    Write-Host ""
     Write-Host " ╔════════════════════════ ShurtcutTitleRemover ════════════════════════╗" 
     Write-Host " ║ Running as: " -NoNewline -ForegroundColor Gray
     if ($isAdmin) {
@@ -215,7 +221,7 @@ function Show-Menu {
         Write-Host "                                            ║"
     } else {
         Write-Host "Standard User (some options unavailable)" -NoNewline -ForegroundColor DarkYellow
-        Write-Host "                                ║"
+        Write-Host "                 ║"
     }
     Write-Host " ║                                                                      ║"
     Write-Host " ║ Options marked with 🌐 affect all users of this computer             ║"
@@ -239,15 +245,15 @@ function Show-Menu {
         Write-Host "                                      ║"
     }
     Write-Host " ║                                                                      ║"
-    Write-Host " ║ UAC Shield:                                                          ║" 
-    Write-Host " ║   C1 - Remove UAC shield from shortcuts 🌐?" -NoNewline
-    if (-not $isAdmin) { 
-        Write-Host " [Admin]" -NoNewline -ForegroundColor DarkYellow 
-        Write-Host "                  ║" 
-    } else {
-        Write-Host "                          ║"
-    }
-    Write-Host " ║                                                                      ║"
+    #Write-Host " ║ UAC Shield:                                                          ║" 
+    #Write-Host " ║   C1 - Remove UAC shield from shortcuts 🌐?" -NoNewline
+    #if (-not $isAdmin) { 
+    #    Write-Host " [Admin]" -NoNewline -ForegroundColor DarkYellow 
+    #    Write-Host "                  ║" 
+    #} else {
+    #    Write-Host "                          ║"
+    #}
+    #Write-Host " ║                                                                      ║"
     Write-Host " ║ Recycle Bin:                                                         ║" 
     Write-Host " ║   D1 - Remove Recycle Bin name                                       ║"
     Write-Host " ║   D2 - Remove Recycle Bin shortcut                                   ║"
@@ -261,6 +267,7 @@ function Show-Menu {
         Write-Host "                                     ║"
     }
     Write-Host " ║   U2 - Restore Recycle Bin                                           ║"
+    Write-Host " ║   U3 - Restore Icon names                                            ║"
     Write-Host " ║                                                                      ║"
     Write-Host " ║   0  - Exit                                                          ║"
     Write-Host " ╚══════════════════════════════════════════════════════════════════════╝"
@@ -296,9 +303,7 @@ do {
             backup -shortcutArr $shortcutsUser -backupDest $destinationFolderUser
             rename -shortcutArr $shortcutsUser -folderToBackup $sourceFolderUser
         }
-        A3 {}
         B {RemoveIcon; stop-process -name explorer}
-        C1 {}
         D1 {RenameRecyclingBin}
         D2 {RemoveRecyclingBin}
         U1 {
@@ -310,5 +315,6 @@ do {
             }
         }
         U2 {RestoreRecyclingBin}
+        U3 {Restore-Icons}
     }
 } while ($true)
