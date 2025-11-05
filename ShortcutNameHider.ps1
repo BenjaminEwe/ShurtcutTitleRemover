@@ -4,15 +4,15 @@
 
 Set-StrictMode -Version Latest
 
-
-$username = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name.Split("\")[-1]
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$username = $env:USERNAME
 $sourceFolderUser = "C:\Users\$username\Desktop"
 $destinationFolderUser = "C:\Users\$username\.DesktopBackup"
 $sourceFolderPublic = "C:\Users\Public\Desktop"
 $destinationFolderPublic = "C:\Users\Public\.DesktopBackup"
 
 # Precon:   None
-# Input:    Desktop to check (TBD)
+# Input:    Desktop to check
 # Output:   Array of all shortcuts (.lnk and .url)
 # Note:     Finds all shortcuts in a given folder and adds them to array. 
 Function Get-Shortcuts {
@@ -25,7 +25,7 @@ Function Get-Shortcuts {
     Write-Debug "List of items found in folder $folderToBackup `n $FolderItemArr"
 
     foreach ($item in $FolderItemArr) {
-        if ($item.Extension -eq ".lnk" -or $item.Extension -eq ".url") {
+        if ($item.Extension -in @(".lnk", ".url")) {
             $shortcutArr.Add($item) | Out-Null
         }
     }
@@ -37,7 +37,7 @@ Function Get-Shortcuts {
     return $shortcutArr
 }
 
-# Precon:   (Hard) Make-Backup-Folder must have been run to ensure the backupfolder exists
+# Precon:   (Hard) Make-BackupFolder must have been run to ensure the backupfolder exists
 # Input:    Array of shortcuts, destination to backup to
 # Note:     This finds all the shortcuts in the arrays whose names are *not* just spaces, and makes a backup copy of them @ backupDest.
 Function Backup-Shortcuts {
@@ -106,13 +106,15 @@ Function Elevate {
     }
 }
 
-Function Make-Backup-Folder {
+Function Make-BackupFolder {
     param (
         [string]$folderToBackup
     )
     # Ensure backup folder exists, make new if not
     if (!(Test-Path $folderToBackup)) { 
         New-Item -Path $folderToBackup -ItemType Directory | Out-Null
+        $folder = Get-Item -Path $folderToBackup 
+        $folder.Attributes = "Hidden"
         Write-Debug "Created backup folder: $folderToBackup"
     } else {
         Write-Debug "Backup folder already exists: $folderToBackup"
@@ -125,7 +127,7 @@ Function Remove-Icon {
     $imageFolderLocation = "C:\ProgramData\ShortcutHider"
     $imageFileLocation = $imageFolderLocation + "\BlankIconForHidingShortcutArrow.ico"
     $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons" # Registry path for shortcut icon
-    $registryPropertyName = '29' # The property for the shortcut icon
+    $registryPropertyName = '29' # The property for the shortcut icon - magic number is MSFT's choice
     $registryPropertyType = 'String' # Property type
 
     # test if image file exists, otherwise create it
@@ -170,11 +172,11 @@ Function Remove-Recycling-Bin {
         New-Item -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies -Name "NonEnum"
     }
     Set-ItemProperty -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum -Name "{645FF040-5081-101B-9F08-00AA002F954E}" -Value 1 -Type DWord
-    stop-process -name explorer
+    Restart-Explorer
     Write-Debug "Recycling bin has been hidden from desktop"
 }
 
-Function Restore-Recycling-Bin {
+Function Restore-RecyclingBin {
     # Put recycling bin on desktop
     if (Test-Path -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum) {
         Remove-Item -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum
@@ -183,28 +185,70 @@ Function Restore-Recycling-Bin {
     # Restore the name of the recycling bin
     Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E}" -Name *
 
-    stop-process -name explorer
+    Restart-Explorer
     Write-Debug "Recycling Bin has been restored"
 }
 
-Function Rename-Recycling-Bin {
+Function Rename-RecyclingBin {
     $recyclingPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E}"
     if(Test-Path -Path $recyclingPath) {
         Set-ItemProperty -Path $recyclingPath -Name "(Default)" -Value " " -Force | Out-Null
-        stop-process -name explorer
+        Restart-Explorer
         Write-Debug "Recycling bin has been renamed"
     } else {
         Write-Warning "Something seems to be wrong. Either the script is outdated or there are some weird problems with your recycling bin"
     }
 }
 
-Function Restore-Icons {
-    Write-Host "Manually copy the icons over, and delete the ones with empty names."
-    if (Test-Path $destinationFolderUser) {
-        explorer $destinationFolderUser
+Function Restore-IconNames {
+    $shortcutsUser = Get-Shortcuts -folderToBackup $destinationFolderUser
+    $shortcutsPublic = Get-Shortcuts -folderToBackup $destinationFolderPublic
+
+    foreach ($file in $shortcutsUser) {
+        Write-Debug "Restoring $file"
+        Copy-Item -Path $file.FullName -Destination "C:\Users\$username\Desktop" -Force
     }
-    if (Test-Path $destinationFolderPublic) {
-        explorer $destinationFolderPublic
+
+    foreach ($file in $shortcutsPublic) {
+        Write-Debug "Restoring $file"
+        Copy-Item -Path $file.FullName -Destination "C:\Users\Public\Desktop" -Force
+    }
+
+    Write-Debug "Icons have been restored from backup"
+
+    # Find all shortcuts on current desktop with entirely space names and move them to the backup folder
+
+    $shortcutArrUser = Get-Shortcuts -folderToBackup $sourceFolderUser
+    foreach ($file in $shortcutArrUser) {
+        if ($file.BaseName -match '^ +$') {
+            Write-Debug "Removing $file with empty name from desktop"
+            Move-Item -Path $file.FullName -Destination $destinationFolderUser -Force
+        }
+    }
+
+    if ($isAdmin) {
+        $shortcutArrPublic = Get-Shortcuts -folderToBackup $sourceFolderPublic
+        foreach ($file in $shortcutArrPublic) {
+            if ($file.BaseName -match '^ +$') {
+                Write-Debug "Removing $file with empty name from desktop"
+                Move-Item -Path $file.FullName -Destination $destinationFolderPublic -Force
+            }
+        }
+        Write-Debug "Empty-named shortcuts have been removed from desktop"
+    }
+}
+
+Function Restart-Explorer {
+    Write-Host "The windows explorer will need to be restarted for changes to take effect. `n Press Y to restart now, or N to restart later manually."
+    $response = Read-Host "(Y/N)"
+    if ($response -eq "Y" -or $response -eq "y") {
+        Stop-Process -Name explorer -Force
+        Start-Sleep -Milliseconds 200
+        if (-not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) {
+            Start-Process explorer
+        }
+    } else {
+        Write-Host "Changes will take effect next time you reboot your computer."   
     }
 }
 
@@ -213,8 +257,6 @@ function Show-Menu {
         Clear-Host
     }
     
-    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-
     Write-Host ""
     Write-Host " ╔════════════════════════ ShortcutTitleRemover ════════════════════════╗" 
     Write-Host " ║ Running as: " -NoNewline -ForegroundColor Gray
@@ -295,8 +337,8 @@ do {
 
             $shortcutsUser = Get-Shortcuts -folderToBackup $sourceFolderUser
             $shortcutsPublic = Get-Shortcuts -folderToBackup $sourceFolderPublic
-            Make-Backup-Folder -folderToBackup $destinationFolderUser
-            Make-Backup-Folder -folderToBackup $destinationFolderPublic
+            Make-BackupFolder -folderToBackup $destinationFolderUser
+            Make-BackupFolder -folderToBackup $destinationFolderPublic
             Backup-Shortcuts -shortcutArr $shortcutsUser -backupDest $destinationFolderUser
             Backup-Shortcuts -shortcutArr $shortcutsPublic -backupDest $destinationFolderPublic
             Rename-Shortcuts -shortcutArr $shortcutsUser -folderToBackup $sourceFolderUser
@@ -304,7 +346,7 @@ do {
         }
         A2 {
             $shortcutsUser = Get-Shortcuts -folderToBackup $sourceFolderUser
-            Make-Backup-Folder -folderToBackup $destinationFolderUser
+            Make-BackupFolder -folderToBackup $destinationFolderUser
             Backup-Shortcuts -shortcutArr $shortcutsUser -backupDest $destinationFolderUser
             Rename-Shortcuts -shortcutArr $shortcutsUser -folderToBackup $sourceFolderUser
         }
@@ -312,21 +354,21 @@ do {
             Elevate -commandToRestart "B"
 
             Remove-Icon
-            stop-process -name explorer
+            Restart-Explorer
         }
-        D1 {Rename-Recycling-Bin}
+        D1 {Rename-RecyclingBin}
         D2 {Remove-Recycling-Bin}
         U1 {
             Elevate -commandToRestart "U1"
 
             if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons") {
                 Remove-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons"
-                stop-process -name explorer
+                Restart-Explorer
             } else {
                 Write-Host "The icon should already be back. Try restarting the computer if it is still missing"
             }
         }
-        U2 {Restore-Recycling-Bin}
-        U3 {Restore-Icons}
+        U2 {Restore-RecyclingBin}
+        U3 {Restore-IconNames}
     }
 } while ($true)
