@@ -1,4 +1,12 @@
-﻿param(
+﻿#
+# License: MIT
+# https://opensource.org/license/MIT
+#
+# Source Code:
+# https://github.com/BenjaminEwe/ShortcutTitleRemover
+#
+
+param(
     [String]$commandToRun
 )
 
@@ -15,7 +23,7 @@ $destinationFolderPublic = "C:\Users\Public\.DesktopBackup"
 # Input:    Desktop to check
 # Output:   Array of all shortcuts (.lnk and .url)
 # Note:     Finds all shortcuts in a given folder and adds them to array. 
-Function Get-Shortcuts {
+function Get-Shortcuts {
     param (
         [String]$folderToBackup
     )
@@ -40,7 +48,7 @@ Function Get-Shortcuts {
 # Precon:   (Hard) Make-BackupFolder must have been run to ensure the backupfolder exists
 # Input:    Array of shortcuts, destination to backup to
 # Note:     This finds all the shortcuts in the arrays whose names are *not* just spaces, and makes a backup copy of them @ backupDest.
-Function Backup-Shortcuts {
+function Backup-Shortcuts {
     param (
         [array]$shortcutArr,
         [string]$backupDest
@@ -60,7 +68,7 @@ Function Backup-Shortcuts {
 # Precon:   (soft) Shortcuts should be backed up first if backups are desired
 # Input:    Array of all shortcuts to be renamed
 # Note:     Renames all the shortcuts to increasingly long empty names.
-Function Rename-Shortcuts {
+function Rename-Shortcuts {
     param (
         [array]$shortcutArr,
         [String]$folderToBackup
@@ -93,7 +101,7 @@ Function Rename-Shortcuts {
     Write-Debug "Shortcuts have been renamed to empty strings"
 }
 
-Function Elevate {
+function Elevate {
     # Takes in an input so that script knows which function to auto-execute after restart
     param (
         [String]$commandToRestart
@@ -106,7 +114,7 @@ Function Elevate {
     }
 }
 
-Function Make-BackupFolder {
+function Make-BackupFolder {
     param (
         [string]$folderToBackup
     )
@@ -121,7 +129,7 @@ Function Make-BackupFolder {
     }
 }
 
-Function Remove-Icon {
+function Remove-Icon {
     # Define blank icon 
     $imageBase64 = "AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAQAQAAAAAAAAAAAAAAAAAAAAAAAD//wECAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAA=="
     $imageFolderLocation = "C:\ProgramData\ShortcutHider"
@@ -167,7 +175,7 @@ Function Remove-Icon {
     }
 }
 
-Function Remove-Recycling-Bin {
+function Remove-Recycling-Bin {
     if((Test-Path -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum) -eq $false) {
         New-Item -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies -Name "NonEnum"
     }
@@ -176,7 +184,7 @@ Function Remove-Recycling-Bin {
     Write-Debug "Recycling bin has been hidden from desktop"
 }
 
-Function Restore-RecyclingBin {
+function Restore-RecyclingBin {
     # Put recycling bin on desktop
     if (Test-Path -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum) {
         Remove-Item -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum
@@ -189,7 +197,7 @@ Function Restore-RecyclingBin {
     Write-Debug "Recycling Bin has been restored"
 }
 
-Function Rename-RecyclingBin {
+function Rename-RecyclingBin {
     $recyclingPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E}"
     if(Test-Path -Path $recyclingPath) {
         Set-ItemProperty -Path $recyclingPath -Name "(Default)" -Value " " -Force | Out-Null
@@ -200,7 +208,7 @@ Function Rename-RecyclingBin {
     }
 }
 
-Function Restore-IconNames {
+function Restore-IconNames {
     $shortcutsUser = Get-Shortcuts -folderToBackup $destinationFolderUser
     $shortcutsPublic = Get-Shortcuts -folderToBackup $destinationFolderPublic
 
@@ -238,7 +246,7 @@ Function Restore-IconNames {
     }
 }
 
-Function Restart-Explorer {
+function Restart-Explorer {
     Write-Host "The windows explorer will need to be restarted for changes to take effect. `n Press Y to restart now, or N to restart later manually."
     $response = Read-Host "(Y/N)"
     if ($response -eq "Y" -or $response -eq "y") {
@@ -253,7 +261,7 @@ Function Restart-Explorer {
 }
 
 $fullLineLength = 69
-Function Print-MenuLine {
+function Print-MenuLine {
     param (
         [string]$line,
         [boolean]$adminNotice,
@@ -316,7 +324,6 @@ function Show-Menu {
     Print-MenuLine -line "0  - Exit"
     Write-Host " ╚══════════════════════════════════════════════════════════════════════╝"
 }
-
 
 do {
     if ((Test-Path variable:commandToRun) -and ($commandToRun -ne "")) {
