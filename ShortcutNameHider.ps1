@@ -252,6 +252,30 @@ Function Restart-Explorer {
     }
 }
 
+$fullLineLength = 69
+Function Print-MenuLine {
+    param (
+        [string]$line,
+        [boolean]$adminNotice,
+        [int]$subLevel
+    )
+    $thisLineLength = $fullLineLength - $line.Length
+    Write-Host " ║ " -NoNewLine
+    while ($subLevel -gt 0) {
+        $subLevel--
+        Write-Host (" " * 2) -NoNewline
+        $thisLineLength -= 2
+    }
+
+    Write-Host $line -NoNewLine
+    if ($adminNotice -and -not $isadmin) {
+        Write-Host " [Admin]" -NoNewline -ForegroundColor DarkYellow
+        $thisLineLength -= 8
+    }
+    Write-Host (" " * $thisLineLength) -NoNewline
+    Write-Host "║"
+}
+
 function Show-Menu {
     if ($DebugPreference -eq "SilentlyContinue") {
         Clear-Host
@@ -267,53 +291,29 @@ function Show-Menu {
         Write-Host "Standard User (some options unavailable)" -NoNewline -ForegroundColor DarkYellow
         Write-Host "                 ║"
     }
-    Write-Host " ║                                                                      ║"
-    Write-Host " ║ Options marked with 🌐 affect all users of this computer             ║"
-    Write-Host " ║                                                                      ║"
-    Write-Host " ║ Icon Names:                                                          ║"
-    Write-Host " ║   A1 - Remove all icon names 🌐" -NoNewline
-    if (-not $isAdmin) {
-        Write-Host " [Admin]" -NoNewline -ForegroundColor DarkYellow 
-        Write-Host "                              ║"
-    } else {
-        Write-Host "                                      ║"
-    }
-    Write-Host " ║   A2 - Remove personal desktop icon names                            ║"
-    Write-Host " ║                                                                      ║"
-    Write-Host " ║ Shortcut Arrow:                                                      ║" 
-    Write-Host " ║   B  - Remove shortcut arrow 🌐" -NoNewline
-    if (-not $isAdmin) { 
-        Write-Host " [Admin]" -NoNewline -ForegroundColor DarkYellow
-        Write-Host "                              ║"
-    } else {
-        Write-Host "                                      ║"
-    }
-    Write-Host " ║                                                                      ║"
-    #Write-Host " ║ UAC Shield:                                                          ║" 
-    #Write-Host " ║   C1 - Remove UAC shield from shortcuts 🌐?" -NoNewline
-    #if (-not $isAdmin) { 
-    #    Write-Host " [Admin]" -NoNewline -ForegroundColor DarkYellow 
-    #    Write-Host "                  ║" 
-    #} else {
-    #    Write-Host "                          ║"
-    #}
-    #Write-Host " ║                                                                      ║"
-    Write-Host " ║ Recycle Bin:                                                         ║" 
-    Write-Host " ║   D1 - Remove Recycle Bin name                                       ║"
-    Write-Host " ║   D2 - Remove Recycle Bin shortcut                                   ║"
-    Write-Host " ║                                                                      ║"
-    Write-Host " ║ Restore Defaults:                                                    ║" 
-    Write-Host " ║   U1 - Restore shortcut arrow 🌐" -NoNewline
-    if (-not $isAdmin) { 
-        Write-Host " [Admin]" -NoNewline -ForegroundColor DarkYellow 
-        Write-Host "                             ║"
-    } else {
-        Write-Host "                                     ║"
-    }
-    Write-Host " ║   U2 - Restore Recycle Bin                                           ║"
-    Write-Host " ║   U3 - Restore Icon names                                            ║"
-    Write-Host " ║                                                                      ║"
-    Write-Host " ║   0  - Exit                                                          ║"
+    Print-MenuLine
+    Print-MenuLine -line "Options marked with 🌐 affect all users of this computer"
+    Print-MenuLine -line ""
+    Print-MenuLine -line "Icon Names:"
+    Print-MenuLine -line "A1 - Remove all icon names 🌐" -subLevel 1 -adminNotice $true
+    Print-MenuLine -line "A2 - Remove personal desktop icon names" -subLevel 1
+    Print-MenuLine
+    Print-MenuLine -line "Shortcut Arrow:"
+    Print-MenuLine -line "B  - Remove shortcut arrow 🌐" -subLevel 1 -adminNotice $true
+    Print-MenuLine
+    #Print-MenuLine -line "UAC Shield:"
+    #Print-MenuLine -line "C1 - Remove UAC shield from shortcuts 🌐?" - $subLevel 1 -adminNotice $true
+    #Print-MenuLine
+    Print-MenuLine -line "Recycle Bin:"
+    Print-MenuLine -line "D1 - Remove Recycle Bin name" -subLevel 1
+    Print-MenuLine -line "D2 - Remove Recycle Bin shortcut" -subLevel 1
+    Print-MenuLine
+    Print-MenuLine -line "Restore Defaults:"
+    Print-MenuLine -line "U1 - Restore shortcut arrow 🌐" -subLevel 1 -adminNotice $true
+    Print-MenuLine -line "U2 - Restore Recycle Bin" -subLevel 1
+    Print-MenuLine -line "U3 - Restore Icon names" -subLevel 1
+    Print-MenuLine
+    Print-MenuLine -line "0  - Exit"
     Write-Host " ╚══════════════════════════════════════════════════════════════════════╝"
 }
 
