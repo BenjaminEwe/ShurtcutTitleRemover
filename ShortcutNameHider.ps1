@@ -1,40 +1,82 @@
-﻿#
-# License: MIT
-# https://opensource.org/license/MIT
-#
-# Source Code:
-# https://github.com/BenjaminEwe/ShortcutTitleRemover
-#
+﻿<#
+.SYNOPSIS
+A script to allow user to hide shortcut names on desktop, hide shortcut arrows, and hide/rename recycle bin.
+
+.DESCRIPTION
+This PowerShell script provides a menu-driven interface to hide shortcut names on the desktop by renaming them to empty strings, 
+thereby making them appear not to have names. 
+It also allows hiding the shortcut arrow overlay on shortcut icons by modifying the Windows registry to use a blank icon. 
+Additionally, the script can hide or rename the Recycle Bin on the desktop. 
+The script supports backing up original shortcut names before renaming, and restoring them later if needed. 
+Some operations require administrator privileges.
+
+.EXAMPLE
+    PS C:\> .\ShortcutNameHider.ps1
+
+.NOTES
+    Author: Benjamin Ewe
+    Date: November 2025
+    Version: 2.0
+    Script Purpose: Declutter user desktop
+    Dependencies: None
+    Target Platform: Windows PowerShell 5.1 or later
+
+.LINK
+    License: MIT
+    https://opensource.org/license/MIT
+    Source Code:
+    https://github.com/BenjaminEwe/ShortcutTitleRemover
+
+#>
+
 
 param(
-    [String]$commandToRun
+    [string]$commandToRun
 )
 
 Set-StrictMode -Version Latest
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 $username = $env:USERNAME
-$sourceFolderUser = "C:\Users\$username\Desktop"
-$destinationFolderUser = "C:\Users\$username\.DesktopBackup"
-$sourceFolderPublic = "C:\Users\Public\Desktop"
-$destinationFolderPublic = "C:\Users\Public\.DesktopBackup"
 
-# Precon:   None
-# Input:    Desktop to check
-# Output:   Array of all shortcuts (.lnk and .url)
-# Note:     Finds all shortcuts in a given folder and adds them to array. 
+$sourceFolderUser = [Environment]::GetFolderPath('Desktop')
+$destinationFolderUser = Join-Path (Split-Path $sourceFolderUser -Parent) '.DesktopBackup'
+
+$sourceFolderPublic = [System.Environment]::GetFolderPath('CommonDesktopDirectory')
+$destinationFolderPublic = Join-Path (Split-Path $sourceFolderPublic -Parent) '.DesktopBackup'
+
+<#
+.SYNOPSIS
+Finds all files of type .url or .lnk from parameter folder
+
+.DESCRIPTION
+Scans the specified folder for shortcut files (.lnk and .url extensions) and returns them as an array.
+
+.PARAMETER path
+A string path to the folder to find shortcuts in
+
+.OUTPUTS
+System.Array
+An array of shortcut file objects from parameter folder.
+
+.EXAMPLE
+$shortcuts = Get-Shortcuts C:\Path\To\Folder
+
+.NOTES
+Only returns files with .lnk or .url extensions.
+#>
 function Get-Shortcuts {
     param (
-        [String]$folderToBackup
+        [string]$path
     )
-    $FolderItemArr = Get-ChildItem -Path $folderToBackup
-    $shortcutArr = [System.Collections.ArrayList]::new()
+    $folderItemArr = Get-ChildItem -Path $path
+    $shortcutArr = @()
 
-    Write-Debug "List of items found in folder $folderToBackup `n $FolderItemArr"
+    Write-Debug "List of items found in folder $path `n $folderItemArr"
 
-    foreach ($item in $FolderItemArr) {
+    foreach ($item in $folderItemArr) {
         if ($item.Extension -in @(".lnk", ".url")) {
-            $shortcutArr.Add($item) | Out-Null
+            $shortcutArr += $item
         }
     }
     Write-Debug "Shortcuts array produced. List of items in the `$shortcutArr"
@@ -45,33 +87,68 @@ function Get-Shortcuts {
     return $shortcutArr
 }
 
-# Precon:   (Hard) Make-BackupFolder must have been run to ensure the backupfolder exists
-# Input:    Array of shortcuts, destination to backup to
-# Note:     This finds all the shortcuts in the arrays whose names are *not* just spaces, and makes a backup copy of them @ backupDest.
+<#
+.SYNOPSIS
+Creates backup copies of shortcuts with non-empty names
+
+.DESCRIPTION
+Copies shortcuts that have real names (not just spaces) to a backup location before they are renamed.
+This allows restoration later if needed.
+
+.PARAMETER shortcutArr
+Array of shortcuts to backup
+
+.PARAMETER path
+Destination folder for backup copies
+
+.EXAMPLE
+Backup-Shortcuts -shortcutArr $shortcuts -Path $destinationFolder
+
+.NOTES
+New-BackupFolder must have been called to ensure backup folder exists.
+#>
 function Backup-Shortcuts {
     param (
         [array]$shortcutArr,
-        [string]$backupDest
+        [string]$path
     )
 
     foreach ($file in $shortcutArr) {
         Write-Debug "Backing up $file"
         if (!($file.BaseName -match '^ +$')) {
             Write-Debug "$file seems to be a real name, backing up the shortcut"
-            Copy-Item -Path $file.FullName -Destination $backupDest
+            Copy-Item -Path $file.FullName -Destination $path
         }
     }
 
-    Write-Debug "Shortcuts have been backed up to $backupDest"
+    Write-Debug "Shortcuts have been backed up to $path"
 }
 
-# Precon:   (soft) Shortcuts should be backed up first if backups are desired
-# Input:    Array of all shortcuts to be renamed
-# Note:     Renames all the shortcuts to increasingly long empty names.
+<#
+.SYNOPSIS
+Renames shortcuts to increasingly long empty names
+
+.DESCRIPTION
+Renames shortcuts to names consisting only of spaces. First renames to temporary names to avoid conflicts,
+then renames to progressively longer space-only names. .lnk and .url files are numbered separately.
+
+.PARAMETER shortcutArr
+Array of shortcuts to rename
+
+.PARAMETER path
+Path containing the shortcuts
+
+.EXAMPLE
+Rename-Shortcuts -shortcutArr $shortcuts -Path $sourceFolder
+
+.NOTES
+Uses a two-pass approach: first to temporary names to avoid conflicts, then to space-only names.
+Shortcuts ought to be backed up before renaming to allow restoration.
+#>
 function Rename-Shortcuts {
     param (
         [array]$shortcutArr,
-        [String]$folderToBackup
+        [string]$path
     )
 
     # First renames shortcuts to name that is improbable to already exist to avoid conflicts.
@@ -84,7 +161,7 @@ function Rename-Shortcuts {
     Write-Debug "Shortcuts have been renamed to temporary strings"
 
 
-    $shortcutArr = Get-Shortcuts -folderToBackup $folderToBackup # Build new array of the newly renamed shortcuts
+    $shortcutArr = Get-Shortcuts $path # Build new array of the newly renamed shortcuts
 
     $urlCnt = 0; $lnkCnt = 0;
     foreach ($file in $shortcutArr) {
@@ -101,41 +178,90 @@ function Rename-Shortcuts {
     Write-Debug "Shortcuts have been renamed to empty strings"
 }
 
-function Elevate {
-    # Takes in an input so that script knows which function to auto-execute after restart
+<#
+.SYNOPSIS
+Elevates script to administrator privileges
+
+.DESCRIPTION
+Checks if the script is running with administrator privileges and restarts it elevated if not.
+The script exits after relaunching with elevation.
+
+.PARAMETER commandToRun
+Command to execute after elevation. This is passed to the elevated instance.
+
+.EXAMPLE
+Invoke-Elevation -commandToRun "B"
+
+.NOTES
+Uses Start-Process with -Verb RunAs to request elevation.
+The calling script will exit after launching the elevated instance.
+#>
+function Invoke-Elevation {
     param (
-        [String]$commandToRestart
+        [string]$commandToRun
     )
     
     if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         Write-Verbose "Not running as administrator. Restarting with elevation..." -Verbose
-        Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -commandToRun $commandToRestart"
+        Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -commandToRun $commandToRun"
         exit
     }
 }
 
-function Make-BackupFolder {
+<#
+.SYNOPSIS
+Creates a hidden backup folder at specified path
+
+.DESCRIPTION
+Creates a backup folder if it doesn't exist and sets it as hidden. If the folder already exists, no action is taken.
+
+.PARAMETER path
+Path where backup folder should be created
+
+.EXAMPLE
+New-BackupFolder $destinationFolder
+
+.NOTES
+The created folder will have the Hidden attribute set.
+#>
+function New-BackupFolder {
     param (
-        [string]$folderToBackup
+        [string]$path
     )
     # Ensure backup folder exists, make new if not
-    if (!(Test-Path $folderToBackup)) { 
-        New-Item -Path $folderToBackup -ItemType Directory | Out-Null
-        $folder = Get-Item -Path $folderToBackup 
+    if (!(Test-Path $path)) { 
+        New-Item -Path $path -ItemType Directory | Out-Null
+        $folder = Get-Item -Path $path 
         $folder.Attributes = "Hidden"
-        Write-Debug "Created backup folder: $folderToBackup"
+        Write-Debug "Created backup folder: $path"
     } else {
-        Write-Debug "Backup folder already exists: $folderToBackup"
+        Write-Debug "Backup folder already exists: $path"
     }
 }
 
-function Remove-Icon {
+<#
+.SYNOPSIS
+Hides the shortcut arrow by modifying registry
+
+.DESCRIPTION
+Creates or modifies registry entries to replace the shortcut arrow with a blank icon.
+Creates the blank icon file if it doesn't exist. Requires administrator privileges.
+
+.EXAMPLE
+Hide-ShortcutArrow
+
+.NOTES
+Modifies HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons registry key.
+Creates a blank icon at C:\ProgramData\ShortcutHider\BlankIconForHidingShortcutArrow.ico.
+Requires administrator privileges.
+#>
+function Hide-ShortcutArrow {
     # Define blank icon 
     $imageBase64 = "AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAQAQAAAAAAAAAAAAAAAAAAAAAAAD//wECAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAA=="
     $imageFolderLocation = "C:\ProgramData\ShortcutHider"
     $imageFileLocation = $imageFolderLocation + "\BlankIconForHidingShortcutArrow.ico"
     $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons" # Registry path for shortcut icon
-    $registryPropertyName = '29' # The property for the shortcut icon - magic number is MSFT's choice
+    $registryPropertyName = '29' # 29 is the number for the shortcut arrow.
     $registryPropertyType = 'String' # Property type
 
     # test if image file exists, otherwise create it
@@ -175,42 +301,126 @@ function Remove-Icon {
     }
 }
 
-function Remove-Recycling-Bin {
+<#
+.SYNOPSIS
+Restores the default shortcut arrow
+
+.DESCRIPTION
+Removes the registry modifications that hide the shortcut arrow, restoring Windows default behavior.
+Requires administrator privileges and triggers an Explorer restart.
+
+.EXAMPLE
+Restore-ShortcutArrow
+
+.NOTES
+Removes HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons registry key.
+Requires administrator privileges.
+#>
+function Restore-ShortcutArrow {
+    Invoke-Elevation -commandToRun "U1"
+
+    if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons") {
+        Remove-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons"
+        Restart-Explorer
+    } else {
+        Write-Host "The icon should already be back. Try restarting the computer if it is still missing"
+    }
+}
+
+<#
+.SYNOPSIS
+Hides the Recycle Bin from the desktop
+
+.DESCRIPTION
+Creates or modifies registry entries to hide the Recycle Bin icon from the desktop.
+Triggers an Explorer restart for changes to take effect.
+
+.EXAMPLE
+Hide-RecycleBin
+
+.NOTES
+Modifies HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum registry key.
+Changes take effect after Explorer is restarted.
+#>
+function Hide-RecycleBin {
     if((Test-Path -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum) -eq $false) {
-        New-Item -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies -Name "NonEnum"
+        New-Item -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies -Name "NonEnum" | Out-Null
     }
     Set-ItemProperty -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum -Name "{645FF040-5081-101B-9F08-00AA002F954E}" -Value 1 -Type DWord
     Restart-Explorer
-    Write-Debug "Recycling bin has been hidden from desktop"
+    Write-Debug "Recycle bin has been hidden from desktop"
 }
 
-function Restore-RecyclingBin {
-    # Put recycling bin on desktop
+<#
+.SYNOPSIS
+Restores the Recycle Bin to the desktop
+
+.DESCRIPTION
+Removes registry modifications that hide the Recycle Bin and restores its default name.
+Triggers an Explorer restart for changes to take effect.
+
+.EXAMPLE
+Restore-RecycleBin
+
+.NOTES
+Removes HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum registry key to show the recycle bin.
+Also restores default name by resetting HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E}.
+#>
+function Restore-RecycleBin {
     if (Test-Path -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum) {
         Remove-Item -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum
     }
     
-    # Restore the name of the recycling bin
     Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E}" -Name *
 
     Restart-Explorer
-    Write-Debug "Recycling Bin has been restored"
+    Write-Debug "Recycle Bin has been restored"
 }
 
-function Rename-RecyclingBin {
-    $recyclingPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E}"
-    if(Test-Path -Path $recyclingPath) {
-        Set-ItemProperty -Path $recyclingPath -Name "(Default)" -Value " " -Force | Out-Null
+<#
+.SYNOPSIS
+Renames the Recycle Bin to a space
+
+.DESCRIPTION
+Modifies the registry to change the Recycle Bin display name to a single space character.
+Triggers an Explorer restart for changes to take effect.
+
+.EXAMPLE
+Rename-RecycleBin
+
+.NOTES
+Modifies HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E} registry key.
+#>
+function Rename-RecycleBin {
+    $recycleBinPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E}"
+    if(Test-Path -Path $recycleBinPath) {
+        Set-ItemProperty -Path $recycleBinPath -Name "(Default)" -Value " " -Force | Out-Null
         Restart-Explorer
-        Write-Debug "Recycling bin has been renamed"
+        Write-Debug "Recycle bin has been renamed"
     } else {
-        Write-Warning "Something seems to be wrong. Either the script is outdated or there are some weird problems with your recycling bin"
+        Write-Warning "Something seems to be wrong. Either the script is outdated or there are some weird problems with your recycle bin"
     }
 }
 
-function Restore-IconNames {
-    $shortcutsUser = Get-Shortcuts -folderToBackup $destinationFolderUser
-    $shortcutsPublic = Get-Shortcuts -folderToBackup $destinationFolderPublic
+<#
+.SYNOPSIS
+Restores original shortcut names from backup
+
+.DESCRIPTION
+Copies backed-up shortcuts with their original names from the backup folder back to the desktop.
+Removes shortcuts with space-only names from the desktop and moves them to backup.
+Can restore both user and public desktop shortcuts if running as administrator.
+
+.EXAMPLE
+Restore-ShortcutNames
+
+.NOTES
+Restores from hidden backup folders: .DesktopBackup
+Public desktop restoration requires administrator privileges.
+#>
+function Restore-ShortcutNames {
+    $shortcutsUser = Get-Shortcuts $destinationFolderUser
+    $shortcutsPublic = Get-Shortcuts $destinationFolderPublic
 
     foreach ($file in $shortcutsUser) {
         Write-Debug "Restoring $file"
@@ -226,7 +436,7 @@ function Restore-IconNames {
 
     # Find all shortcuts on current desktop with entirely space names and move them to the backup folder
 
-    $shortcutArrUser = Get-Shortcuts -folderToBackup $sourceFolderUser
+    $shortcutArrUser = Get-Shortcuts $sourceFolderUser
     foreach ($file in $shortcutArrUser) {
         if ($file.BaseName -match '^ +$') {
             Write-Debug "Removing $file with empty name from desktop"
@@ -235,7 +445,7 @@ function Restore-IconNames {
     }
 
     if ($isAdmin) {
-        $shortcutArrPublic = Get-Shortcuts -folderToBackup $sourceFolderPublic
+        $shortcutArrPublic = Get-Shortcuts $sourceFolderPublic
         foreach ($file in $shortcutArrPublic) {
             if ($file.BaseName -match '^ +$') {
                 Write-Debug "Removing $file with empty name from desktop"
@@ -246,12 +456,27 @@ function Restore-IconNames {
     }
 }
 
+<#
+.SYNOPSIS
+Restarts Windows Explorer process
+
+.DESCRIPTION
+Prompts the user to restart Windows Explorer to apply changes. If the user agrees,
+stops the explorer.exe process and restarts it if it doesn't automatically restart.
+
+.EXAMPLE
+Restart-Explorer
+
+.NOTES
+Explorer typically restarts automatically, but this function ensures it does if needed.
+Some changes require Explorer restart to be visible.
+#>
 function Restart-Explorer {
     Write-Host "The windows explorer will need to be restarted for changes to take effect. `n Press Y to restart now, or N to restart later manually."
     $response = Read-Host "(Y/N)"
     if ($response -eq "Y" -or $response -eq "y") {
         Stop-Process -Name explorer -Force
-        Start-Sleep -Milliseconds 200
+        Start-Sleep -Milliseconds 400
         if (-not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) {
             Start-Process explorer
         }
@@ -261,11 +486,35 @@ function Restart-Explorer {
 }
 
 $fullLineLength = 69
-function Print-MenuLine {
+
+<#
+.SYNOPSIS
+Writes a formatted menu line
+
+.DESCRIPTION
+Outputs a single line of the menu with proper formatting, including borders, indentation,
+and optional admin notices. Ensures consistent line length with padding.
+
+.PARAMETER line
+The text content to display in the menu line
+
+.PARAMETER adminNotice
+If true and not running as admin, displays [Admin] indicator
+
+.PARAMETER subLevel
+Indentation level for nested menu items (each level adds 2 spaces)
+
+.EXAMPLE
+Write-MenuLine "A1 - Remove all shortcut names" -subLevel 1 -adminNotice $true
+
+.NOTES
+Uses module-level variable $fullLineLength for consistent formatting.
+#>
+function Write-MenuLine {
     param (
         [string]$line,
-        [boolean]$adminNotice,
-        [int]$subLevel
+        [boolean]$adminNotice = $false,
+        [int]$subLevel = 0
     )
     $thisLineLength = $fullLineLength - $line.Length
     Write-Host " ║ " -NoNewLine
@@ -276,7 +525,7 @@ function Print-MenuLine {
     }
 
     Write-Host $line -NoNewLine
-    if ($adminNotice -and -not $isadmin) {
+    if ($adminNotice -and -not $isAdmin) {
         Write-Host " [Admin]" -NoNewline -ForegroundColor DarkYellow
         $thisLineLength -= 8
     }
@@ -284,7 +533,23 @@ function Print-MenuLine {
     Write-Host "║"
 }
 
-function Show-Menu {
+<#
+.SYNOPSIS
+Displays the main menu
+
+.DESCRIPTION
+Clears the screen and displays the formatted menu with all available options.
+Shows current privilege level (Administrator or Standard User) and marks options
+that require elevated privileges.
+
+.EXAMPLE
+Write-Menu
+
+.NOTES
+Clears screen unless debug mode is enabled.
+Menu display adjusts based on current user privileges.
+#>
+function Write-Menu {
     if ($DebugPreference -eq "SilentlyContinue") {
         Clear-Host
     }
@@ -299,29 +564,29 @@ function Show-Menu {
         Write-Host "Standard User (some options unavailable)" -NoNewline -ForegroundColor DarkYellow
         Write-Host "                 ║"
     }
-    Print-MenuLine
-    Print-MenuLine -line "Options marked with 🌐 affect all users of this computer"
-    Print-MenuLine -line ""
-    Print-MenuLine -line "Icon Names:"
-    Print-MenuLine -line "A1 - Remove all icon names 🌐" -subLevel 1 -adminNotice $true
-    Print-MenuLine -line "A2 - Remove personal desktop icon names" -subLevel 1
-    Print-MenuLine
-    Print-MenuLine -line "Shortcut Arrow:"
-    Print-MenuLine -line "B  - Remove shortcut arrow 🌐" -subLevel 1 -adminNotice $true
-    Print-MenuLine
-    #Print-MenuLine -line "UAC Shield:"
-    #Print-MenuLine -line "C1 - Remove UAC shield from shortcuts 🌐?" - $subLevel 1 -adminNotice $true
-    #Print-MenuLine
-    Print-MenuLine -line "Recycle Bin:"
-    Print-MenuLine -line "D1 - Remove Recycle Bin name" -subLevel 1
-    Print-MenuLine -line "D2 - Remove Recycle Bin shortcut" -subLevel 1
-    Print-MenuLine
-    Print-MenuLine -line "Restore Defaults:"
-    Print-MenuLine -line "U1 - Restore shortcut arrow 🌐" -subLevel 1 -adminNotice $true
-    Print-MenuLine -line "U2 - Restore Recycle Bin" -subLevel 1
-    Print-MenuLine -line "U3 - Restore Icon names" -subLevel 1
-    Print-MenuLine
-    Print-MenuLine -line "0  - Exit"
+    Write-MenuLine
+    Write-MenuLine "Options marked with 🌐 affect all users of this computer"
+    Write-MenuLine
+    Write-MenuLine "Shortcut Names:"
+    Write-MenuLine "A1 - Remove all shortcut names 🌐" -subLevel 1 -adminNotice $true
+    Write-MenuLine "A2 - Remove personal desktop shortcut names" -subLevel 1
+    Write-MenuLine
+    Write-MenuLine "Shortcut Arrow:"
+    Write-MenuLine "B  - Remove shortcut arrow 🌐" -subLevel 1 -adminNotice $true
+    Write-MenuLine
+    #Write-MenuLine "UAC Shield:"
+    #Write-MenuLine "C1 - Remove UAC shield from shortcuts 🌐?" - $subLevel 1 -adminNotice $true
+    #Write-MenuLine
+    Write-MenuLine "Recycle Bin:"
+    Write-MenuLine "D1 - Remove recycle bin name" -subLevel 1
+    Write-MenuLine "D2 - Remove recycle bin shortcut" -subLevel 1
+    Write-MenuLine
+    Write-MenuLine "Restore Defaults:"
+    Write-MenuLine "U1 - Restore shortcut arrow 🌐" -subLevel 1 -adminNotice $true
+    Write-MenuLine "U2 - Restore recycle bin" -subLevel 1
+    Write-MenuLine "U3 - Restore shortcut names" -subLevel 1
+    Write-MenuLine
+    Write-MenuLine "0  - Exit"
     Write-Host " ╚══════════════════════════════════════════════════════════════════════╝"
 }
 
@@ -331,7 +596,7 @@ do {
         $switchInput = $commandToRun
         $commandToRun = ""
     } else {
-        Show-Menu
+        Write-Menu
         $switchInput = Read-Host "Select an option"
         Clear-Host
     }
@@ -340,42 +605,31 @@ do {
     {
         0 {exit}
         A1 { 
-            Elevate -commandToRestart "A1"
-
-            $shortcutsUser = Get-Shortcuts -folderToBackup $sourceFolderUser
-            $shortcutsPublic = Get-Shortcuts -folderToBackup $sourceFolderPublic
-            Make-BackupFolder -folderToBackup $destinationFolderUser
-            Make-BackupFolder -folderToBackup $destinationFolderPublic
-            Backup-Shortcuts -shortcutArr $shortcutsUser -backupDest $destinationFolderUser
-            Backup-Shortcuts -shortcutArr $shortcutsPublic -backupDest $destinationFolderPublic
-            Rename-Shortcuts -shortcutArr $shortcutsUser -folderToBackup $sourceFolderUser
-            Rename-Shortcuts -shortcutArr $shortcutsPublic -folderToBackup $sourceFolderPublic
+            Invoke-Elevation -commandToRun "A1"
+            $shortcutsUser = Get-Shortcuts $sourceFolderUser
+            $shortcutsPublic = Get-Shortcuts $sourceFolderPublic
+            New-BackupFolder $destinationFolderUser
+            New-BackupFolder $destinationFolderPublic
+            Backup-Shortcuts -shortcutArr $shortcutsUser -Path $destinationFolderUser
+            Backup-Shortcuts -shortcutArr $shortcutsPublic -Path $destinationFolderPublic
+            Rename-Shortcuts -shortcutArr $shortcutsUser -Path $sourceFolderUser
+            Rename-Shortcuts -shortcutArr $shortcutsPublic -Path $sourceFolderPublic
         }
         A2 {
-            $shortcutsUser = Get-Shortcuts -folderToBackup $sourceFolderUser
-            Make-BackupFolder -folderToBackup $destinationFolderUser
-            Backup-Shortcuts -shortcutArr $shortcutsUser -backupDest $destinationFolderUser
-            Rename-Shortcuts -shortcutArr $shortcutsUser -folderToBackup $sourceFolderUser
+            $shortcutsUser = Get-Shortcuts $sourceFolderUser
+            New-BackupFolder $destinationFolderUser
+            Backup-Shortcuts -shortcutArr $shortcutsUser -Path $destinationFolderUser
+            Rename-Shortcuts -shortcutArr $shortcutsUser -Path $sourceFolderUser
         }
         B {
-            Elevate -commandToRestart "B"
-
-            Remove-Icon
+            Invoke-Elevation -commandToRun "B"
+            Hide-ShortcutArrow
             Restart-Explorer
         }
-        D1 {Rename-RecyclingBin}
-        D2 {Remove-Recycling-Bin}
-        U1 {
-            Elevate -commandToRestart "U1"
-
-            if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons") {
-                Remove-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons"
-                Restart-Explorer
-            } else {
-                Write-Host "The icon should already be back. Try restarting the computer if it is still missing"
-            }
-        }
-        U2 {Restore-RecyclingBin}
-        U3 {Restore-IconNames}
+        D1 {Rename-RecycleBin}
+        D2 {Hide-RecycleBin}
+        U1 {Restore-ShortcutArrow}
+        U2 {Restore-RecycleBin}
+        U3 {Restore-ShortcutNames}
     }
 } while ($true)
