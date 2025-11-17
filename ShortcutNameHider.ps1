@@ -350,18 +350,21 @@ Requires administrator privileges and triggers an Explorer restart.
 Restore-ShortcutArrow
 
 .NOTES
-Removes HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons registry key.
+Removes "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons" value 29.
 Requires administrator privileges.
 #>
 function Restore-ShortcutArrow {
     Invoke-Restart -commandToRun "U1" -adminRestart $true
 
     if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons") {
-        Remove-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons"
-        Restart-Explorer
-    } else {
-        Write-Host "The icon should already be back. Try restarting the computer if it is still missing"
+        $props = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons"
+        if ($props.PSObject.Properties.Name -contains "29") {
+            Remove-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons" -Name "29"
+            Restart-Explorer
+            break
+        }
     }
+    Write-Host "The icon should already be back. Try restarting the computer if it is still missing"
 }
 
 <#
@@ -660,7 +663,9 @@ do {
     } else {
         Write-Menu
         $switchInput = Read-Host "Select an option"
-        Clear-Host
+        if ($DebugPreference -eq "SilentlyContinue") {
+            Clear-Host
+        }
     }
 
     switch ($switchInput)
