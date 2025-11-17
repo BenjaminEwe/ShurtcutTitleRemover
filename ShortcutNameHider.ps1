@@ -120,7 +120,7 @@ function Backup-Shortcuts {
             try { 
                 Copy-Item -Path $file.FullName -Destination $path 
             } catch {
-                Write-Warning "Failed to back up $file $_`nWill restart the script to avoid renaming any shortcuts."
+                Write-Warning "Failed to back up $file `n$_`nWill restart the script to avoid renaming any shortcuts."
                 Start-Sleep -Seconds 5
                 Invoke-Restart -commandToRun "ERROR_BACKUP_COPY_FAILED"
             } 
@@ -165,7 +165,7 @@ function Rename-Shortcuts {
         try {
             Rename-Item -Path $file.FullName -NewName ("RESERVED_BY_SHORTCUT-NAME-HIDER-" + $shortcutCnt + $file.Extension)
         } catch {
-            Write-Warning "Failed to rename $file to temporary name: $_`nWill restart the script to abort renaming."
+            Write-Warning "Failed to rename $file to temporary name: `n$_`nWill restart the script to abort renaming."
             Start-Sleep -Seconds 5
             Invoke-Restart -commandToRun "ERROR_RENAME_TEMP"
         }
@@ -190,7 +190,7 @@ function Rename-Shortcuts {
                 Rename-Item -Path $file.FullName -NewName ((" " * $urlCnt) + $file.Extension)
             }
         } catch {
-            Write-Warning "Failed to rename $file to empty name: $_`nWill restart the script to abort renaming."
+            Write-Warning "Failed to rename $file to empty name: `n$_`nWill restart the script to abort renaming."
             Start-Sleep -Seconds 5
             Invoke-Restart -commandToRun "ERROR_RENAME_EMPTY"
         }
@@ -263,7 +263,7 @@ function New-BackupFolder {
             $folder = Get-Item -Path $path 
             $folder.Attributes = "Hidden"
         } catch {
-            Write-Warning "Failed to create backup folder at $path $_`nWill restart the script to abort renaming."
+            Write-Warning "Failed to create backup folder at $path `n$_`nWill restart the script to abort renaming."
             Start-Sleep -Seconds 5
             Invoke-Restart -commandToRun "ERROR_CREATE_BACKUP_FOLDER"
         }
@@ -309,7 +309,7 @@ function Hide-ShortcutArrow {
             $bytes = [Convert]::FromBase64String($imageBase64)
             [System.IO.File]::WriteAllBytes($imageFileLocation, $bytes)
         } catch {
-            Write-Warning "Failed to create icon or folder at $imageFolderLocation $_`nWill restart the script to abort renaming."
+            Write-Warning "Failed to create icon or folder at $imageFolderLocation `n$_`nWill restart the script to abort renaming."
             Start-Sleep -Seconds 5
             Invoke-Restart -commandToRun "ERROR_CREATE_ICON"
         }
@@ -346,6 +346,9 @@ Restores the default shortcut arrow
 .DESCRIPTION
 Removes the registry modifications that hide the shortcut arrow, restoring Windows default behavior.
 Requires administrator privileges and triggers an Explorer restart.
+First it checks if the script is running as administrator with Invoke-Restart. If it is, it checks for the registry value 29 and removes it if found.
+If the script is not running as administrator, it restarts itself with elevation and with the command "U1" that makes the restarted process rerun the function.
+If the registry value was not found, the break statement is not ran and a message is displayed indicating the icon should already be back.
 
 .EXAMPLE
 Restore-ShortcutArrow
@@ -482,12 +485,12 @@ function Restore-ShortcutNames {
 
     foreach ($file in $shortcutsUser) {
         Write-Debug "Restoring $file"
-        Copy-Item -Path $file.FullName -Destination "C:\Users\$username\Desktop" -Force
+        Copy-Item -Path $file.FullName -Destination $sourceFolderUser -Force
     }
 
     foreach ($file in $shortcutsPublic) {
         Write-Debug "Restoring $file"
-        Copy-Item -Path $file.FullName -Destination "C:\Users\Public\Desktop" -Force
+        Copy-Item -Path $file.FullName -Destination $sourceFolderPublic -Force
     }
 
     Write-Debug "Icons have been restored from backup"
@@ -570,7 +573,7 @@ Uses module-level variable $fullLineLength for consistent formatting.
 #>
 function Write-MenuLine {
     param (
-        [string]$line,
+        [string]$line = "",
         [boolean]$adminNotice = $false,
         [int]$subLevel = 0
     )
