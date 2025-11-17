@@ -416,6 +416,8 @@ function Restore-RecycleBin {
     }
     
     Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E}" -Name *
+    # Note: This isn't really correct powershell but it works to reset the name to default. 
+    # It is not possible to remove the (Default) property directly, and it is bet to avoid removing the entire key.
 
     Restart-Explorer
     Write-Debug "Recycle Bin has been restored"
