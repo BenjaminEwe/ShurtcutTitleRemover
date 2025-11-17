@@ -176,7 +176,8 @@ function Rename-Shortcuts {
 
     $shortcutArr = Get-Shortcuts $path # Build new array of the newly renamed shortcuts
 
-    $urlCnt = 0; $lnkCnt = 0;
+    $urlCnt = 0
+    $lnkCnt = 0
     foreach ($file in $shortcutArr) {
         try {
             Write-Debug "renaming $file"
