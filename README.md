@@ -7,9 +7,18 @@ PowerShell script that can remove the:
 
 To run script open PowerShell and paste:
 
-```(New-Object Net.WebClient).DownloadString("https://raw.githubusercontent.com/BenjaminEwe/ShurtcutTitleRemover/refs/heads/main/ShortcutNameHider.ps1") | iex```
+```irm https://raw.githubusercontent.com/BenjaminEwe/ShurtcutTitleRemover/refs/heads/main/ShortcutNameHider.ps1 -OutFile $env:TEMP\SCTR.ps1; & $env:TEMP\SCTR.ps1```
 
 ![NoTitlesNoArrowNoBinName](Images/NoTitlesNoArrowNoBinName.png)
+
+## ExecutionPolicy
+
+If you get an error like this:
+
+<img width="2063" height="193" alt="image" src="https://github.com/user-attachments/assets/dbc8999b-4670-47c1-9c5a-d7f60acca0e7" />
+
+You need to run powershell as administrator and run the command ``Set-ExecutionPolicy RemoteSigned`` and press yes.
+
 
 ## Results
 <details>
