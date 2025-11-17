@@ -117,7 +117,13 @@ function Backup-Shortcuts {
         Write-Debug "Backing up $file"
         if (!($file.BaseName -match '^ +$')) {
             Write-Debug "$file seems to be a real name, backing up the shortcut"
-            Copy-Item -Path $file.FullName -Destination $path
+            try { 
+                Copy-Item -Path $file.FullName -Destination $path 
+            } catch {
+                Write-Warning "Failed to back up $file $_`nWill restart the script to avoid renaming any shortcuts."
+                Start-Sleep -Seconds 5
+                Invoke-Restart -commandToRun "ERROR_BACKUP_COPY_FAILED"
+            } 
         }
     }
 
@@ -156,7 +162,14 @@ function Rename-Shortcuts {
     foreach ($file in $shortcutArr) {
         Write-Debug "renaming $file"
         $shortcutCnt++
-        Rename-Item -Path $file.FullName -NewName ("RESERVED_BY_SHORTCUT-NAME-HIDER-" + $shortcutCnt + $file.Extension)
+        try {
+            Rename-Item -Path $file.FullName -NewName ("RESERVED_BY_SHORTCUT-NAME-HIDER-" + $shortcutCnt + $file.Extension)
+        } catch {
+            Write-Warning "Failed to rename $file to temporary name: $_`nWill restart the script to abort renaming."
+            Start-Sleep -Seconds 5
+            Invoke-Restart -commandToRun "ERROR_RENAME_TEMP"
+        }
+
     }
     Write-Debug "Shortcuts have been renamed to temporary strings"
 
@@ -165,14 +178,20 @@ function Rename-Shortcuts {
 
     $urlCnt = 0; $lnkCnt = 0;
     foreach ($file in $shortcutArr) {
-        Write-Debug "renaming $file"
-        if ($file.Extension -eq ".lnk") {
-            $lnkCnt++
-            Rename-Item -Path $file.FullName -NewName ((" " * $lnkCnt) + $file.Extension)
+        try {
+            Write-Debug "renaming $file"
+            if ($file.Extension -eq ".lnk") {
+                $lnkCnt++
+                Rename-Item -Path $file.FullName -NewName ((" " * $lnkCnt) + $file.Extension)
 
-        } elseif ($file.Extension -eq ".url") {
-            $urlCnt++
-            Rename-Item -Path $file.FullName -NewName ((" " * $urlCnt) + $file.Extension)
+            } elseif ($file.Extension -eq ".url") {
+                $urlCnt++
+                Rename-Item -Path $file.FullName -NewName ((" " * $urlCnt) + $file.Extension)
+            }
+        } catch {
+            Write-Warning "Failed to rename $file to empty name: $_`nWill restart the script to abort renaming."
+            Start-Sleep -Seconds 5
+            Invoke-Restart -commandToRun "ERROR_RENAME_EMPTY"
         }
     }
     Write-Debug "Shortcuts have been renamed to empty strings"
@@ -190,21 +209,29 @@ The script exits after relaunching with elevation.
 Command to execute after elevation. This is passed to the elevated instance.
 
 .EXAMPLE
-Invoke-Elevation -commandToRun "B"
+Invoke-Restart -commandToRun "B" -adminRestart $true
 
 .NOTES
 Uses Start-Process with -Verb RunAs to request elevation.
 The calling script will exit after launching the elevated instance.
 #>
-function Invoke-Elevation {
+function Invoke-Restart {
     param (
-        [string]$commandToRun
+        [string]$commandToRun,
+        [boolean]$adminRestart = $false
     )
     
-    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    if ($adminRestart -and -not $isAdmin) {
         Write-Verbose "Not running as administrator. Restarting with elevation..." -Verbose
         Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -commandToRun $commandToRun"
         exit
+    }
+    elseif (-not $adminRestart) {
+        Write-Debug "Restarting without elevation with command $commandToRun"
+        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -commandToRun $commandToRun"
+        exit
+    } else {
+        Write-Debug "Already running as administrator, no need to restart"
     }
 }
 
@@ -230,9 +257,15 @@ function New-BackupFolder {
     )
     # Ensure backup folder exists, make new if not
     if (!(Test-Path $path)) { 
-        New-Item -Path $path -ItemType Directory | Out-Null
-        $folder = Get-Item -Path $path 
-        $folder.Attributes = "Hidden"
+        try {
+            New-Item -Path $path -ItemType Directory | Out-Null
+            $folder = Get-Item -Path $path 
+            $folder.Attributes = "Hidden"
+        } catch {
+            Write-Warning "Failed to create backup folder at $path $_`nWill restart the script to abort renaming."
+            Start-Sleep -Seconds 5
+            Invoke-Restart -commandToRun "ERROR_CREATE_BACKUP_FOLDER"
+        }
         Write-Debug "Created backup folder: $path"
     } else {
         Write-Debug "Backup folder already exists: $path"
@@ -261,19 +294,24 @@ function Hide-ShortcutArrow {
     $imageFolderLocation = "C:\ProgramData\ShortcutHider"
     $imageFileLocation = $imageFolderLocation + "\BlankIconForHidingShortcutArrow.ico"
     $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons" # Registry path for shortcut icon
-    $registryPropertyName = '29' # 29 is the number for the shortcut arrow.
+    $registryPropertyName = '29' # The number for the shortcut arrow.
     $registryPropertyType = 'String' # Property type
 
-    # test if image file exists, otherwise create it
+    # Test if image file exists, otherwise create it
     if (Test-Path $imageFileLocation){
         Write-Debug "Icon already exists"
     } else {
         Write-Debug "Will save the needed icon at $imageFileLocation"
-        New-Item -Path $imageFolderLocation -ItemType Directory | Out-Null
-
-        #Decode Base64 to directory
-        $bytes = [Convert]::FromBase64String($imageBase64)
-        [System.IO.File]::WriteAllBytes($imageFileLocation, $bytes)
+        try {
+            New-Item -Path $imageFolderLocation -ItemType Directory | Out-Null
+            #Decode Base64 to directory
+            $bytes = [Convert]::FromBase64String($imageBase64)
+            [System.IO.File]::WriteAllBytes($imageFileLocation, $bytes)
+        } catch {
+            Write-Warning "Failed to create icon or folder at $imageFolderLocation $_`nWill restart the script to abort renaming."
+            Start-Sleep -Seconds 5
+            Invoke-Restart -commandToRun "ERROR_CREATE_ICON"
+        }
     }
 
     if (!(Test-path $registryPath)){ # In this case, the Shell-Icons key does not exist. The Key is created, and then the value is created.
@@ -287,7 +325,6 @@ function Hide-ShortcutArrow {
         }
         New-ItemProperty @newItemProperty | Out-Null
     } elseif ((Get-Item -Path $registryPath).GetValueNames() -Contains "29") { # In this case the Shell-Icons key exists and does have a key named 29. it is modified to the new value.
-        # finds if there already is a value named 29
         Set-ItemProperty -Path $registryPath -Name $registryPropertyName -Value $imageFileLocation -Force | Out-Null
     }
     else { # in this case the Shell-Icons key exists, but no string named 29 exists. A new one is then created
@@ -317,7 +354,7 @@ Removes HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons reg
 Requires administrator privileges.
 #>
 function Restore-ShortcutArrow {
-    Invoke-Elevation -commandToRun "U1"
+    Invoke-Restart -commandToRun "U1" -adminRestart $true
 
     if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons") {
         Remove-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Icons"
@@ -419,8 +456,25 @@ Restores from hidden backup folders: .DesktopBackup
 Public desktop restoration requires administrator privileges.
 #>
 function Restore-ShortcutNames {
-    $shortcutsUser = Get-Shortcuts $destinationFolderUser
-    $shortcutsPublic = Get-Shortcuts $destinationFolderPublic
+    if (Test-Path $destinationFolderUser) {
+        Write-Debug "Backup folder for user desktop found"
+        $shortcutsUser = Get-Shortcuts $destinationFolderUser
+    } else {
+        $shortcutsUser = @()
+        Write-Warning "No backup folder found for user desktop. Cannot restore shortcut names."
+    }
+    
+    if ((Test-Path $destinationFolderPublic) -and $isAdmin) {
+        Write-Debug "Backup folder for public desktop found"
+        $shortcutsPublic = Get-Shortcuts $destinationFolderPublic
+    } else {
+        $shortcutsPublic = @()
+        if (-not $isAdmin) {
+            Write-Warning "Not running as administrator, cannot restore public desktop shortcuts.`nIf public desktop shortcuts have not been modified, this is fine."
+        } else {
+            Write-Warning "No backup folder found for public desktop. Cannot restore shortcut names.`nIf public desktop shortcuts have not been modified, this is fine."
+        }
+    }
 
     foreach ($file in $shortcutsUser) {
         Write-Debug "Restoring $file"
@@ -591,6 +645,14 @@ function Write-Menu {
 }
 
 do {
+    if ($commandToRun -like "ERROR_*") {
+        Write-Warning "$commandToRun"
+        Write-Warning "An error occurred during the last operation. Consider opening a bug report."
+        Write-Warning "Continuing to use the script may lead to unintended consequences, though no operations should have catastrophic effects."
+        Start-Sleep -Seconds 10
+        $commandToRun = ""
+    }
+
     if ((Test-Path variable:commandToRun) -and ($commandToRun -ne "")) {
         Write-Host "$commandToRun"
         $switchInput = $commandToRun
@@ -605,7 +667,7 @@ do {
     {
         0 {exit}
         A1 { 
-            Invoke-Elevation -commandToRun "A1"
+            Invoke-Restart -commandToRun "A1" -adminRestart $true
             $shortcutsUser = Get-Shortcuts $sourceFolderUser
             $shortcutsPublic = Get-Shortcuts $sourceFolderPublic
             New-BackupFolder $destinationFolderUser
@@ -622,7 +684,7 @@ do {
             Rename-Shortcuts -shortcutArr $shortcutsUser -Path $sourceFolderUser
         }
         B {
-            Invoke-Elevation -commandToRun "B"
+            Invoke-Restart -commandToRun "B" -adminRestart $true
             Hide-ShortcutArrow
             Restart-Explorer
         }
